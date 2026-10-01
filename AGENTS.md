@@ -1,5 +1,6 @@
 # 项目约定
 
+- 本仓库提交的作者和提交者必须使用 `anjing-le <245548353+anjing-le@users.noreply.github.com>`。提交前核对 `git var GIT_AUTHOR_IDENT` 和 `git var GIT_COMMITTER_IDENT`，仓库本地身份配置应与此一致。
 - 这是 Happy GitHub Journey 的静态学习站。当前用户授权制作三层列表块的交互骨架：点击块空白区域选中后，右侧只展示关联块并染色；再次点击取消选择。保持固定顺序，移除排序与拖拽。点击块标题打开详情浮窗，标题与筛选按钮保持独立。保持空白块，不填写真实或虚构材料，不添加介绍文字和大标题。
 - `site/` 是站点源码；`npm run build` 将其复制到 `dist/`。不要手动编辑 `dist/`。
 - 部署会缓存静态资源；修改 CSS 或入口脚本时，同时更新 `site/index.html` 中对应资源的版本参数，避免刷新后继续使用旧资源。
