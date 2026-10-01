@@ -55,7 +55,7 @@ function render(animate = false) {
       open.setAttribute('aria-label', `查看第${level + 1}层空白块${originalIndex + 1}详情`);
       open.setAttribute('aria-haspopup', 'dialog');
       open.setAttribute('aria-controls', detail.id);
-      open.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12 4h4v4m0-4-6 6M8 4H4v12h12v-4"/></svg>';
+      open.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 3h7l3 3v11H5zM12 3v4h3M8 10h4M8 13h4"/></svg>';
       open.addEventListener('click', () => openDetail(level, id));
       open.addEventListener('keydown', event => onBlockKey(event, level, id, true));
       block.append(select, open);
