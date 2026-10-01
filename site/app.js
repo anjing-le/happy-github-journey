@@ -10,7 +10,10 @@ const status = document.querySelector('#status');
 const closeButton = document.querySelector('.close-detail');
 const sourceLink = document.querySelector('.source-link');
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+const mobileLayout = matchMedia('(max-width: 720px)');
 let detailTarget = null;
+let activeLevel = 0;
+let boardWidth = board.clientWidth;
 
 function blockButton(id) {
   return document.querySelector(`.block[data-id="${id}"] .block-open`);
@@ -124,18 +127,40 @@ detail.addEventListener('click', event => {
   if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) closeDetail(true);
 });
 
+function markLevel(level) {
+  activeLevel = level;
+  switches.forEach((button, index) => button.setAttribute('aria-current', String(index === level)));
+}
+
+function scrollToLevel(level, behavior = reducedMotion.matches ? 'instant' : 'smooth') {
+  markLevel(level);
+  board.scrollTo({ left: mobileLayout.matches ? columns[level].offsetLeft - columns[0].offsetLeft : 0, behavior });
+}
+
 switches.forEach((button, level) => button.addEventListener('click', () => {
   closeDetail();
-  board.scrollTo({ left: columns[level].offsetLeft - columns[0].offsetLeft, behavior: reducedMotion.matches ? 'instant' : 'smooth' });
+  scrollToLevel(level);
 }));
 board.addEventListener('scroll', () => {
-  const left = board.getBoundingClientRect().left + 24;
+  if (!mobileLayout.matches) return;
+  const center = board.getBoundingClientRect().left + board.clientWidth / 2;
   let nearest = 0;
   let distance = Infinity;
   columns.forEach((column, index) => {
-    const current = Math.abs(column.getBoundingClientRect().left - left);
+    const rect = column.getBoundingClientRect();
+    const current = Math.abs(rect.left + rect.width / 2 - center);
     if (current < distance) { distance = current; nearest = index; }
   });
-  switches.forEach((button, index) => button.setAttribute('aria-current', String(index === nearest)));
+  markLevel(nearest);
 }, { passive: true });
+board.addEventListener('focusin', event => {
+  const column = event.target.closest('.column');
+  if (mobileLayout.matches && column) scrollToLevel(Number(column.dataset.level), 'instant');
+});
+window.addEventListener('resize', () => {
+  if (board.clientWidth === boardWidth) return;
+  boardWidth = board.clientWidth;
+  const level = activeLevel;
+  requestAnimationFrame(() => scrollToLevel(level, 'instant'));
+});
 render();

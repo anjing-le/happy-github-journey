@@ -113,16 +113,16 @@ body.detail-open { overflow: hidden; }
 
 @media (max-width: 720px) {
   .workspace { padding: 28px 0 40px; }
-  .level-switch { display: flex; justify-content: center; align-items: center; gap: 5px; margin: 0 16px 32px; }
+  .level-switch { display: flex; justify-content: center; align-items: center; gap: 5px; margin: 0 20px 24px; }
   .level-switch button { flex: 1; min-width: 0; border: 0; padding: 0 5px; background: var(--section-bg); color: var(--section-text); box-shadow: inset 0 0 0 1px var(--section-border); min-height: 44px; border-radius: 14px; font-size: 12px; letter-spacing: 0; white-space: nowrap; cursor: pointer; }
   .level-switch button:hover { background: var(--section-hover-bg); }
   .level-switch button[aria-current="true"] { background: var(--section-active-bg); color: var(--section-text); box-shadow: inset 0 0 0 1px var(--section-accent); }
   .level-switch span { width: 8px; flex: 0 0 8px; height: 1px; background: #e7e5ec; }
   .level-switch button.has-related::after { content: ""; display: block; margin: 5px auto -8px; height: 3px; width: 3px; background: var(--section-accent); border-radius: 50%; }
-  .board { display: flex; gap: 16px; padding: 4px 24px 16px; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; scrollbar-width: none; }
+  .board { display: flex; gap: 0; padding: 4px 0 16px; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; scrollbar-width: none; }
   .board::-webkit-scrollbar { display: none; }
-  .column { flex: 0 0 calc(100vw - 80px); padding: 0 0 20px; scroll-snap-align: start; scroll-margin-left: 24px; }
-  .column:last-child { margin-right: 32px; }
+  .column { flex: 0 0 100%; padding: 0 20px 20px; scroll-snap-align: start; scroll-margin-left: 0; }
+  .column:last-child { margin-right: 0; }
   .column-label { display: none; }
   .block { height: 72px; border-radius: 14px; }
   .block-open { padding-left: 20px; }
