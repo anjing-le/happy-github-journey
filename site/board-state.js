@@ -24,110 +24,74 @@ function collectForward(links, ids) {
   return new Set(ids.flatMap((id) => links[id] ?? []));
 }
 
-function collectReverse(links, ids) {
-  return new Set(
-    Object.entries(links)
-      .filter(([, linked]) => linked.some((id) => ids.has(id)))
-      .map(([id]) => id),
-  );
-}
-
 export function createBoardState() {
-  const manualOrder = INITIAL_LEVELS.map((ids) => [...ids]);
-  let displayOrder = manualOrder.map((ids) => [...ids]);
-  let active = null;
+  const levels = INITIAL_LEVELS.map((ids) => [...ids]);
+  const selected = [null, null, null];
 
   function assertLevel(level) {
-    if (!Number.isInteger(level) || level < 0 || level >= manualOrder.length) {
+    if (!Number.isInteger(level) || level < 0 || level >= levels.length) {
       throw new RangeError('Unknown board level');
     }
   }
 
-  function assertItem(level, id) {
+  function assertVisibleItem(level, id) {
     assertLevel(level);
-    if (!manualOrder[level].includes(id)) {
+    if (!levels[level].includes(id)) {
       throw new RangeError('Unknown board item');
     }
-  }
-
-  function relatedSets() {
-    const result = [new Set(), new Set(), new Set()];
-    if (!active) return result;
-
-    if (active.level === 0) {
-      result[1] = collectForward(SOURCE_DESIGNS, [active.id]);
-    } else if (active.level === 1) {
-      result[0] = collectReverse(SOURCE_DESIGNS, new Set([active.id]));
-      result[2] = collectForward(DESIGN_TECHNOLOGIES, [active.id]);
-    } else {
-      result[1] = collectReverse(DESIGN_TECHNOLOGIES, new Set([active.id]));
+    if (!snapshot().visible[level].includes(id)) {
+      throw new RangeError('Board item is outside the current filter');
     }
-    return result;
   }
 
   function snapshot() {
-    const sets = relatedSets();
-    const related = displayOrder.map((ids, level) => ids.filter((id) => sets[level].has(id)));
-    const selected = manualOrder.map((_, level) => active?.level === level ? active.id : null);
+    const visible = levels.map((ids) => [...ids]);
+    const related = [[], [], []];
+
+    if (selected[0] !== null) {
+      const designs = collectForward(SOURCE_DESIGNS, [selected[0]]);
+      visible[1] = levels[1].filter((id) => designs.has(id));
+      related[1] = [...visible[1]];
+    }
+
+    if (selected[1] !== null || selected[0] !== null) {
+      const designs = selected[1] === null ? visible[1] : [selected[1]];
+      const technologies = collectForward(DESIGN_TECHNOLOGIES, designs);
+      visible[2] = levels[2].filter((id) => technologies.has(id));
+      related[2] = [...visible[2]];
+    }
+
     return {
-      active: active ? { ...active } : null,
-      selected,
-      ordered: displayOrder.map((ids) => [...ids]),
+      selected: [...selected],
+      visible,
       related,
     };
   }
 
-  function bubbleRelated() {
-    const sets = relatedSets();
-    displayOrder = manualOrder.map((ids, level) => {
-      // A clicked block stays in place; only connected columns bubble.
-      if (!active) return [...ids];
-      if (active.level === level) return [...displayOrder[level]];
-      return [
-        ...ids.filter((id) => sets[level].has(id)),
-        ...ids.filter((id) => !sets[level].has(id)),
-      ];
-    });
-  }
-
   return {
     get levels() {
-      return manualOrder.map((ids) => [...ids]);
-    },
-    get active() {
-      return active ? { ...active } : null;
+      return levels.map((ids) => [...ids]);
     },
     get selected() {
       return snapshot().selected;
     },
-    get ordered() {
-      return snapshot().ordered;
+    get visible() {
+      return snapshot().visible;
     },
     get related() {
       return snapshot().related;
     },
     snapshot,
     select(level, id) {
-      assertItem(level, id);
-      active = { level, id };
-      bubbleRelated();
-      return snapshot();
-    },
-    move(level, id, targetId = null) {
-      assertItem(level, id);
-      if (targetId !== null) assertItem(level, targetId);
-      if (id !== targetId) {
-        const ids = displayOrder[level];
-        ids.splice(ids.indexOf(id), 1);
-        const targetIndex = targetId === null ? ids.length : ids.indexOf(targetId);
-        ids.splice(targetIndex, 0, id);
-        manualOrder[level] = [...ids];
+      assertVisibleItem(level, id);
+      selected[level] = selected[level] === id ? null : id;
+      for (let downstream = level + 1; downstream < selected.length; downstream += 1) {
+        selected[downstream] = null;
       }
       return snapshot();
     },
     clearSelection() {
-      active = null;
-      displayOrder = manualOrder.map((ids) => [...ids]);
+      selected.fill(null);
       return snapshot();
     },
   };
