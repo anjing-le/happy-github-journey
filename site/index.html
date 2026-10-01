@@ -3,20 +3,55 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#f6f8fb" />
-    <meta
-      name="description"
-      content="Happy GitHub Journey：内容正在规划中。"
-    />
-    <title>Happy GitHub Journey</title>
+    <meta name="theme-color" content="#f7f8fa" />
+    <meta name="description" content="拆解项目与文章，连接设计和技术，积累自己的最佳实践。" />
+    <title>Happy GitHub Journey · 学习与实践</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/styles.css" />
+    <script type="module" src="/app.js"></script>
   </head>
   <body>
-    <main class="page">
-      <div class="empty-state">
-        <h1>Happy GitHub Journey</h1>
-        <p>内容正在规划中。</p>
+    <a class="skip-link" href="#main-content">跳到内容</a>
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="/" aria-label="Happy GitHub Journey 首页">
+          <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M9 8v16m0-8h8a6 6 0 0 0 6-6V8" stroke="currentColor" stroke-width="2"/><circle cx="9" cy="7" r="3" fill="currentColor"/><circle cx="9" cy="25" r="3" fill="currentColor"/><circle cx="23" cy="7" r="3" fill="currentColor"/></svg></span>
+          <span class="brand-text">Happy GitHub Journey<span>学习与实践</span></span>
+        </a>
+        <nav class="workspace-nav" aria-label="工作台">
+          <button type="button" data-section="knowledge" aria-pressed="true"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 4h6v12H3zM11 4h6v12h-6M6 7h1m6 0h1M6 10h1m6 0h1"/></svg>知识积累</button>
+          <button type="button" data-section="practices" aria-pressed="false"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 11 4 4L16 5M4 5h4M4 8h2"/></svg>最佳实践</button>
+        </nav>
+        <a class="repo-link" href="https://github.com/anjing-le/happy-github-journey" target="_blank" rel="noopener noreferrer" aria-label="打开 GitHub 公开仓库"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 4H4v12h12v-3M10 4h6v6M16 4l-7 7"/></svg><span>GitHub</span></a>
       </div>
+    </header>
+    <main class="app-shell" id="main-content">
+      <div class="intro">
+        <div><p class="eyebrow">A PERSONAL LEARNING JOURNEY</p><h1>从好设计，到自己的实践<span class="title-dot">。</span></h1><p class="intro-copy">读懂场景，拆解设计，理解原理。把学到的，变成有依据的选择。</p></div>
+        <span class="preview-badge"><span></span>结构预览</span>
+      </div>
+      <div class="preview-note"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7"/><path d="M10 9v4m0-7v.5"/></svg><p>以下条目为<strong>虚构的结构演示</strong>，用于一起讨论页面。内容、分类和阅读方式都可以继续调整。</p></div>
+      <section data-panel="knowledge" aria-label="知识积累">
+        <div class="learning-path" aria-label="三层知识">
+          <button type="button" data-level="sources" aria-pressed="true"><span class="level-number">01</span><span class="level-info"><strong>学习条目</strong><span>项目 · 文章</span></span><span class="level-count" data-count="sources">—</span></button>
+          <span class="path-connector" aria-hidden="true">→</span>
+          <button type="button" data-level="designs" aria-pressed="false"><span class="level-number">02</span><span class="level-info"><strong>关键设计</strong><span>组合 · 取舍</span></span><span class="level-count" data-count="designs">—</span></button>
+          <span class="path-connector" aria-hidden="true">→</span>
+          <button type="button" data-level="technologies" aria-pressed="false"><span class="level-number">03</span><span class="level-info"><strong>技术与原理</strong><span>机制 · 实现</span></span><span class="level-count" data-count="technologies">—</span></button>
+        </div>
+        <div class="section-heading"><div><p class="eyebrow">THE LEARNING LIBRARY</p><h2 id="knowledge-heading">学习条目</h2><p id="knowledge-description">从一份材料开始，沿着引用深入设计与技术。</p></div><span class="small-note">点击条目，查看关联</span></div>
+        <div class="library-toolbar">
+          <div class="source-filters" id="source-filters" aria-label="来源类型"><button type="button" data-source="all" aria-pressed="true">全部</button><button type="button" data-source="project" aria-pressed="false">开源项目</button><button type="button" data-source="article" aria-pressed="false">文章</button></div>
+          <label class="search-box" for="search-input"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m13 13 4 4"/></svg><input type="search" id="search-input" placeholder="搜索条目、设计或技术" autocomplete="off" /><span class="sr-only">搜索当前层级</span></label>
+        </div>
+        <div class="library-grid"><div class="library-list-column"><div id="knowledge-list" class="knowledge-list" aria-live="polite"></div><p class="list-footnote">场景 → 设计 → 技术，可沿引用双向浏览。</p></div><aside id="detail-panel" class="detail-panel" aria-label="知识条目详情" tabindex="-1"></aside></div>
+      </section>
+      <section data-panel="practices" aria-label="最佳实践" hidden>
+        <div class="section-heading practice-heading"><div><p class="eyebrow">FROM LEARNING TO DOING</p><h2>最佳实践</h2><p>围绕一个场景，写下有来源、有取舍、可检验的做法。</p></div><span class="small-note">阅读 → 引用 → 实践</span></div>
+        <div class="practice-layout"><aside class="practice-sidebar"><div class="sidebar-label">实践文章 <span>演示</span></div><div id="practice-list"></div><div class="practice-hint"><span class="hint-line"></span><p>从一个问题出发。<br />让每个选择，都有依据。</p></div></aside><article id="practice-article" class="practice-article" tabindex="-1"></article></div>
+      </section>
+      <noscript><p class="noscript-note">结构预览需要启用 JavaScript，才能切换知识层级和文章视图。</p></noscript>
+      <footer class="site-footer"><span>Happy GitHub Journey</span><span>先理解，再实践，持续修订。</span></footer>
     </main>
   </body>
 </html>
