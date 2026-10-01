@@ -1,4 +1,5 @@
 import { createBoardState } from './board-state.js';
+import { sourceUrlFor } from './content.js';
 
 const state = createBoardState();
 const columns = [...document.querySelectorAll('.column')];
@@ -6,6 +7,8 @@ const board = document.querySelector('.board');
 const detail = document.querySelector('.detail');
 const switches = [...document.querySelectorAll('[data-jump]')];
 const status = document.querySelector('#status');
+const closeButton = document.querySelector('.close-detail');
+const sourceLink = document.querySelector('.source-link');
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 let drag = null;
 let detailTarget = null;
@@ -66,30 +69,19 @@ function render(animate = false) {
       block.animate([{ transform: `translateY(${oldRect.top - next.top}px)` }, { transform: 'translateY(0)' }], { duration: 250, easing: 'cubic-bezier(.2,.7,.2,1)' });
     }
   });
-  if (detail.open && detailTarget) positionDetail(detailTarget);
-}
-
-function positionDetail(id) {
-  const rect = blockButton(id)?.closest('.slot').getBoundingClientRect();
-  if (!rect) return;
-  const width = 326;
-  let x = rect.right + 18;
-  if (x + width > innerWidth - 24) x = rect.left - width - 18;
-  x = Math.max(16, Math.min(innerWidth - width - 16, x));
-  detail.style.left = `${x}px`;
-  // Keep the top of each list visible while the empty detail floats below it.
-  detail.style.top = `${Math.max(180, Math.min(rect.bottom + 18, innerHeight - 240))}px`;
 }
 
 function closeDetail(restoreFocus = false) {
   const id = detailTarget;
   detail.close();
   detailTarget = null;
+  document.body.classList.remove('detail-open');
   if (restoreFocus && id) blockButton(id)?.focus({ preventScroll: true });
 }
 
 function selectBlock(level, id) {
   if (performance.now() < suppressClickUntil) return;
+  if (drag) endDrag({ pointerId: drag.pointerId }, true);
   if (state.active?.id === id && detail.open && detailTarget === id) {
     closeDetail(true);
     return;
@@ -97,9 +89,14 @@ function selectBlock(level, id) {
   state.select(level, id);
   render(true);
   detailTarget = id;
-  positionDetail(id);
-  if (!detail.open) detail.show();
-  blockButton(id)?.focus({ preventScroll: true });
+  const url = level === 0 ? sourceUrlFor(id) : null;
+  sourceLink.hidden = !url;
+  if (url) sourceLink.href = url;
+  else sourceLink.removeAttribute('href');
+  detail.querySelector('.detail-scroll').scrollTop = 0;
+  if (!detail.open) detail.showModal();
+  document.body.classList.add('detail-open');
+  closeButton.focus({ preventScroll: true });
 }
 
 function onBlockKey(event, level, id, isHandle = false) {
@@ -121,7 +118,7 @@ function onBlockKey(event, level, id, isHandle = false) {
 }
 
 function beginDrag(event, level, id, block, handle) {
-  if (event.button !== 0 || drag) return;
+  if (event.button !== 0 || drag || detail.open) return;
   event.preventDefault();
   const rect = block.getBoundingClientRect();
   drag = { level, id, block, handle, pointerId: event.pointerId, startY: event.clientY, offsetX: event.clientX - rect.left, offsetY: event.clientY - rect.top, rect, started: false, target: undefined };
@@ -188,15 +185,20 @@ function endDrag(event, cancelled = false) {
 
 document.addEventListener('pointerup', event => endDrag(event));
 document.addEventListener('pointercancel', event => endDrag(event, true));
-document.querySelector('.close-detail').addEventListener('click', () => closeDetail(true));
+closeButton.addEventListener('click', () => closeDetail(true));
+detail.addEventListener('cancel', event => {
+  event.preventDefault();
+  closeDetail(true);
+});
+detail.addEventListener('click', event => {
+  if (event.target !== detail) return;
+  const rect = detail.getBoundingClientRect();
+  if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) closeDetail(true);
+});
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape') {
     if (drag) endDrag({ pointerId: drag.pointerId }, true);
-    closeDetail(true);
   }
-});
-document.addEventListener('click', event => {
-  if (detail.open && !detail.contains(event.target) && !event.target.closest('.block-open')) closeDetail();
 });
 
 switches.forEach((button, level) => button.addEventListener('click', () => {
@@ -213,5 +215,4 @@ board.addEventListener('scroll', () => {
   });
   switches.forEach((button, index) => button.setAttribute('aria-current', String(index === nearest)));
 }, { passive: true });
-window.addEventListener('resize', () => { if (detail.open) positionDetail(detailTarget); });
 render();
