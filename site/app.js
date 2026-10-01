@@ -92,6 +92,7 @@ function selectBlock(level, id) {
 
 function openDetail(level, id) {
   detailTarget = id;
+  detail.dataset.level = String(level);
   const url = level === 0 ? sourceUrlFor(id) : null;
   sourceLink.hidden = !url;
   if (url) sourceLink.href = url;
