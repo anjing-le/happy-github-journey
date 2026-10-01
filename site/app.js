@@ -37,6 +37,7 @@ function render(animate = false) {
       block.className = 'block';
       block.dataset.id = id;
       block.dataset.level = level;
+      block.style.setProperty('--line-width', `${[52, 66, 44, 59, 48][originalIndex]}%`);
       const isActive = selected[level] === id;
       block.classList.toggle('is-active', isActive);
       block.classList.toggle('is-related', related[level].includes(id));
@@ -45,8 +46,7 @@ function render(animate = false) {
       select.className = 'block-open';
       select.setAttribute('aria-label', `选中第${level + 1}层空白块${originalIndex + 1}`);
       select.setAttribute('aria-pressed', String(isActive));
-      select.innerHTML = '<span class="block-dot" aria-hidden="true"></span><span class="block-title" aria-hidden="true"></span>';
-      select.style.setProperty('--line-width', `${[52, 66, 44, 59, 48][originalIndex]}%`);
+      select.innerHTML = '<span class="block-dot" aria-hidden="true"></span>';
       select.addEventListener('click', () => selectBlock(level, id));
       select.addEventListener('keydown', event => onBlockKey(event, level, id));
       const open = document.createElement('button');
@@ -55,7 +55,7 @@ function render(animate = false) {
       open.setAttribute('aria-label', `查看第${level + 1}层空白块${originalIndex + 1}详情`);
       open.setAttribute('aria-haspopup', 'dialog');
       open.setAttribute('aria-controls', detail.id);
-      open.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 3h7l3 3v11H5zM12 3v4h3M8 10h4M8 13h4"/></svg>';
+      open.innerHTML = '<span class="block-title" aria-hidden="true"></span>';
       open.addEventListener('click', () => openDetail(level, id));
       open.addEventListener('keydown', event => onBlockKey(event, level, id, true));
       block.append(select, open);
