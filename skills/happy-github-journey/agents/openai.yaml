@@ -1,4 +1,0 @@
-interface:
-  display_name: "Happy GitHub Journey"
-  short_description: "收录项目与文章，逐条校准关键设计和技术原理，再处理待解析素材"
-  default_prompt: "使用 $happy-github-journey 收录这批素材，先标记待解析，再选一条校准三层拆解。"

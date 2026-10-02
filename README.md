@@ -23,7 +23,7 @@ npm run build
 - 来源链接保留在第一层；未来解析结果分别放进 `content/designs/` 与 `content/technologies/`。只维护来源→设计、设计→技术的关联，出处与反向关系由构建生成。
 - 原始 PDF、截图等保存到 `.pocket/<source-id>/`，该目录不进入公开 Git 或网站；记录捕获日期、完整性和缺失项。PDF 是快照，动图、视频和外链可能缺失。本地保存不代表已经有异地备份。
 - 新增或修改原件后运行 `npm run verify:archives` 核对本地文件；公开构建只验证存档记录，Cloudflare 不依赖这台机器上的私有 PDF。
-- 项目 Skill 在 [skills/happy-github-journey/SKILL.md](skills/happy-github-journey/SKILL.md)，内容格式在其引用文件中。目前为待真实样例校准的初稿：先收录，再用一条完整素材调整粒度，认可后批量处理指定的待解析项。
+- 项目 Skill 为 `anjing-happy-github-journey`，保存在 [skills/anjing-happy-github-journey/SKILL.md](skills/anjing-happy-github-journey/SKILL.md)，内容格式在其引用文件中。目前为待真实样例校准的初稿：先收录，再用一条完整素材调整粒度，认可后批量处理指定的待解析项。
 
 ## 当前交互
 
