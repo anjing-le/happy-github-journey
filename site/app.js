@@ -34,7 +34,37 @@ function archiveLabels(item) {
   return ['存档已保存', completenessLabels[item.archive.completeness] ?? completenessLabels.unknown];
 }
 
-// Use textContent throughout: saved Markdown never becomes executable HTML.
+// Create text nodes and a small set of inline elements; never execute saved HTML.
+function renderInline(node, text) {
+  const tokens = /\*\*([^*\n]+)\*\*|\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|`([^`\n]+)`/g;
+  let cursor = 0;
+  for (const match of text.matchAll(tokens)) {
+    node.append(document.createTextNode(text.slice(cursor, match.index)));
+    let inline = null;
+    if (match[1]) {
+      inline = document.createElement('strong');
+      inline.textContent = match[1];
+    } else if (match[4]) {
+      inline = document.createElement('code');
+      inline.textContent = match[4];
+    } else {
+      try {
+        const url = new URL(match[3]);
+        if (['http:', 'https:'].includes(url.protocol) && !url.username && !url.password) {
+          inline = document.createElement('a');
+          inline.textContent = match[2];
+          inline.href = url.href;
+          inline.target = '_blank';
+          inline.rel = 'noopener noreferrer';
+        }
+      } catch { /* Invalid links remain visible as text. */ }
+    }
+    node.append(inline ?? document.createTextNode(match[0]));
+    cursor = match.index + match[0].length;
+  }
+  node.append(document.createTextNode(text.slice(cursor)));
+}
+
 function renderBody(container, value) {
   container.replaceChildren();
   const lines = String(value ?? '').replace(/\r\n?/g, '\n').split('\n');
@@ -43,7 +73,7 @@ function renderBody(container, value) {
   let code = null;
   const append = (tag, text) => {
     const node = document.createElement(tag);
-    node.textContent = text;
+    renderInline(node, text);
     container.append(node);
     return node;
   };
@@ -81,7 +111,7 @@ function renderBody(container, value) {
       const tag = /^\s*\d/.test(line) ? 'ol' : 'ul';
       if (!list || list.tagName.toLowerCase() !== tag) list = append(tag, '');
       const item = document.createElement('li');
-      item.textContent = bullet[1];
+      renderInline(item, bullet[1]);
       list.append(item);
       continue;
     }
