@@ -9,6 +9,8 @@ All three are required to run this helper. Python 3.10+ is supported.
         --output '.pocket/source-id/capture-20261002'
     python3 capture_wechat.py --url 'https://mp.weixin.qq.com/s/…' \
         --html '/path/to/saved-article.html' --output '/new/archive/path'
+    python3 capture_wechat.py --url 'https://mp.weixin.qq.com/s/…' \
+        --mirror-url 'https://www.aixq.cc/63314.html' --output '/new/archive/path'
 
 The output directory must not already exist. The helper never edits content/,
 claims completeness is checked, reads a browser profile, or solves a CAPTCHA.
@@ -36,6 +38,7 @@ HTML_LIMIT = 24 * 1024 * 1024  # SingleFile embeds its images in the HTML.
 IMAGE_LIMIT = 20 * 1024 * 1024
 TOTAL_IMAGE_LIMIT = 160 * 1024 * 1024
 IMAGE_DOMAINS = ("qpic.cn", "qlogo.cn")
+MIRROR_IMAGE_HOSTS = ("tu.aixq.cc", "www.aixq.cc")
 FORMATS = {
     "JPEG": "jpg", "PNG": "png", "GIF": "gif", "WEBP": "webp",
     "BMP": "bmp", "TIFF": "tiff", "ICO": "ico", "AVIF": "avif",
@@ -70,7 +73,8 @@ def write_json(path: Path, value: dict) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-def valid_network_url(value: str, image: bool = False) -> None:
+def valid_network_url(value: str, image: bool = False, mirror: bool = False,
+                      source_exact: str | None = None) -> None:
     parts = urlsplit(value)
     host = (parts.hostname or "").lower()
     try:
@@ -79,17 +83,31 @@ def valid_network_url(value: str, image: bool = False) -> None:
         raise CaptureError("invalid URL port") from exc
     if parts.scheme != "https" or parts.username or parts.password or port not in (None, 443):
         raise CaptureError("only HTTPS URLs without credentials and with the default port are accepted")
-    allowed = any(host == domain or host.endswith("." + domain) for domain in IMAGE_DOMAINS) if image else host == "mp.weixin.qq.com"
+    if image:
+        allowed = any(host == domain or host.endswith("." + domain) for domain in IMAGE_DOMAINS)
+        allowed = allowed or (mirror and host in MIRROR_IMAGE_HOSTS)
+        if mirror and is_mirror_placeholder(value):
+            raise CaptureError("public reprint default/placeholder image is not an article image")
+    elif mirror:
+        allowed = (host == "www.aixq.cc" and re.fullmatch(r"/[1-9][0-9]*\.html", parts.path)
+                   and not parts.query and not parts.fragment)
+        if source_exact is not None and value != source_exact:
+            raise CaptureError("public reprint redirect changed the explicitly requested URL")
+    else:
+        allowed = host == "mp.weixin.qq.com"
     if not allowed:
-        raise CaptureError("image host is not a trusted WeChat CDN" if image else "source host must be mp.weixin.qq.com")
+        raise CaptureError("image host is outside the permitted capture CDNs" if image else
+                           "reprint URL must be https://www.aixq.cc/<number>.html" if mirror else
+                           "source host must be mp.weixin.qq.com")
 
 
-def fetch(url: str, session, limit: int, image: bool = False) -> tuple[bytes, str, dict]:
+def fetch(url: str, session, limit: int, image: bool = False, mirror: bool = False,
+          source_exact: str | None = None) -> tuple[bytes, str, dict]:
     """Bounded ordinary requests, with manual redirects and no cookie storage."""
     current = url
     started = time.monotonic()
     for _ in range(6):
-        valid_network_url(current, image=image)
+        valid_network_url(current, image=image, mirror=mirror, source_exact=source_exact)
         session.cookies.clear()
         with session.get(current, stream=True, timeout=(10, 20), allow_redirects=False) as response:
             if response.status_code in (301, 302, 303, 307, 308):
@@ -146,7 +164,8 @@ def local_image(ref: str, input_html: Path) -> bytes:
     return read_limited(candidate, IMAGE_LIMIT)
 
 
-def image_bytes(ref: str, input_html: Path | None, source_url: str, session) -> tuple[bytes, str]:
+def image_bytes(ref: str, input_html: Path | None, source_url: str, session,
+                mirror: bool = False) -> tuple[bytes, str]:
     if ref.startswith("data:"):
         if len(ref) > IMAGE_LIMIT * 4 // 3 + 4096:
             raise CaptureError("embedded image exceeds the byte limit")
@@ -164,12 +183,12 @@ def image_bytes(ref: str, input_html: Path | None, source_url: str, session) -> 
         ref = "https:" + ref
     parts = urlsplit(ref)
     if parts.scheme or parts.netloc:
-        valid_network_url(ref, image=True)
-        raw, final, _ = fetch(ref, session, IMAGE_LIMIT, image=True)
+        valid_network_url(ref, image=True, mirror=mirror)
+        raw, final, _ = fetch(ref, session, IMAGE_LIMIT, image=True, mirror=mirror)
         return raw, safe_url(final)
     if input_html is not None:
         return local_image(ref, input_html), "local"
-    return image_bytes(urljoin(source_url, ref), None, source_url, session)
+    return image_bytes(urljoin(source_url, ref), None, source_url, session, mirror=mirror)
 
 
 def inspect_image(raw: bytes, image_module) -> dict:
@@ -192,14 +211,33 @@ def inspect_image(raw: bytes, image_module) -> dict:
             "bytes": len(raw), "sha256": sha256(raw)}
 
 
-def reference_for_image(tag, imported: bool) -> str:
+def reference_for_image(tag, imported: bool, mirror: bool = False) -> str:
     src = str(tag.get("src", "")).strip()
     lazy = str(tag.get("data-src", "")).strip()
     # SingleFile/browser-save src points to the preserved image; data-src may
     # still point to a network resource or a lazy-loading original.
-    if imported and src and (src.startswith("data:") or not urlsplit(src).scheme and not src.startswith("//")):
+    if not mirror and imported and src and (src.startswith("data:") or not urlsplit(src).scheme and not src.startswith("//")):
         return src
     return lazy or src
+
+
+def is_mirror_placeholder(ref: str) -> bool:
+    return bool(re.search(r"(?:^|/)(?:default-img|default-image|placeholder)(?:[.?!]|$)",
+                          urlsplit(ref).path, re.I))
+
+
+def body_has_source(body, source_url: str) -> bool:
+    """Require the exact original URL in body text or a real body anchor.
+
+    An unrelated sidebar, script, image attribute, or a longer URL containing
+    the share token cannot establish correspondence with the original article.
+    """
+    expected = source_url.rstrip("/")
+    for anchor in body.find_all("a", href=True):
+        if str(anchor["href"]).strip().rstrip("/") == expected:
+            return True
+    pattern = re.escape(expected) + r"/?(?=$|[\s<>\"'，。；：！？、（）【】《》\[\]()])"
+    return bool(re.search(pattern, body.get_text(" ", strip=True)))
 
 
 def ordered_blocks(body, image_records: dict, tag_class, string_class, comment_class) -> list[dict]:
@@ -245,8 +283,12 @@ def ordered_blocks(body, image_records: dict, tag_class, string_class, comment_c
     return blocks
 
 
-def render(title: str, source_url: str, blocks: list[dict], missing: list[dict]) -> tuple[str, str]:
+def render(title: str, source_url: str, blocks: list[dict], missing: list[dict],
+           retrieved_from: str | None = None) -> tuple[str, str]:
     markdown = ["# " + title, "", "来源：" + source_url, ""]
+    if retrieved_from:
+        markdown.extend(["公开转载存档：" + retrieved_from,
+                         "未经与微信原文逐字及图文比对。", ""])
     reading = []
     for block in blocks:
         if block["kind"] == "code":
@@ -276,6 +318,8 @@ def render(title: str, source_url: str, blocks: list[dict], missing: list[dict])
         markdown.extend("- " + item["detail"] for item in missing)
         reading.append("<aside><h2>存档缺失与限制</h2><ul>" + "".join("<li>" + html.escape(item["detail"]) + "</li>" for item in missing) + "</ul></aside>")
     source = html.escape(source_url, quote=True)
+    provenance = ("<p>公开转载存档：<a href=\"" + html.escape(retrieved_from, quote=True) +
+                  "\" rel=\"noreferrer noopener\">转载链接</a>。未经与微信原文逐字及图文比对。</p>") if retrieved_from else ""
     reading_html = f'''<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -285,7 +329,7 @@ body{{max-width:760px;margin:32px auto;padding:0 20px;font:18px/1.8 system-ui,sa
 h1{{font-size:1.7em;line-height:1.4}}p,pre{{white-space:pre-wrap}}figure{{margin:24px 0}}img{{display:block;max-width:100%;height:auto}}
 .missing,aside{{color:#733;padding:12px;background:#fff4f0}}a{{color:#175db6}}
 </style></head><body><h1>{html.escape(title)}</h1><p><a href="{source}" rel="noreferrer noopener">原始链接</a></p>
-{''.join(reading)}</body></html>'''
+{provenance}{''.join(reading)}</body></html>'''
     return "\n".join(markdown) + "\n", reading_html
 
 
@@ -295,11 +339,17 @@ def capture(args, dependencies) -> tuple[dict, int]:
     if output.exists() or output.is_symlink():
         raise CaptureError("output already exists; select a new capture directory to preserve existing archives")
     output.mkdir(parents=True, exist_ok=False)
+    mirror_url = getattr(args, "mirror_url", None)
+    mirror = bool(mirror_url)
     attempt = {
         "schema_version": 1, "captured_at": datetime.now(timezone.utc).isoformat(),
-        "source_url": args.url, "method": "html_import" if args.html else "ordinary_http",
+        "source_url": args.url, "method": "public_reprint_http" if mirror else "html_import" if args.html else "ordinary_http",
         "status": "failed", "completeness": "unknown",
     }
+    if mirror:
+        attempt.update(retrieved_from=mirror_url, source_kind="public-reprint",
+                       original_comparison="not-compared",
+                       provenance_note="正文标注了精确的微信原始链接；这是公开转载，未经与微信原文逐字及图文比对。")
     raw = None
     session = requests.Session()
     session.trust_env = False  # No environment proxy, .netrc credentials, or profile data.
@@ -309,29 +359,33 @@ def capture(args, dependencies) -> tuple[dict, int]:
         parts = urlsplit(args.url)
         if not (parts.path.startswith("/s/") or parts.path == "/s"):
             raise CaptureError("source URL must be a WeChat article share URL")
+        if mirror and args.html:
+            raise CaptureError("--mirror-url and --html are mutually exclusive")
         input_html = Path(args.html).expanduser().resolve() if args.html else None
         if input_html:
             raw = read_limited(input_html, HTML_LIMIT)
             final_url = args.url
         else:
-            raw, final_url, response_info = fetch(args.url, session, HTML_LIMIT)
+            raw, final_url, response_info = fetch(mirror_url or args.url, session, HTML_LIMIT,
+                                                  mirror=mirror, source_exact=mirror_url)
             attempt["response"] = {**response_info, "final_url": safe_url(final_url)}
         attempt["response_bytes"] = len(raw)
         attempt["response_sha256"] = sha256(raw)
         soup = soup_class(raw, "html.parser")
-        body = soup.find(id="js_content")
+        body = soup.select_one(".entry-content") if mirror else soup.find(id="js_content")
         signals = [term for term in ("环境异常", "去验证", "该内容已被发布者删除", "此内容因违规无法查看", "内容已删除") if term in soup.get_text(" ", strip=True)]
         if body is None:
             attempt["verification_or_removal_signals"] = signals
-            raise CaptureError("no #js_content article body; this is a verification/removal/non-article page")
+            raise CaptureError("no .entry-content public reprint body" if mirror else
+                               "no #js_content article body; this is a verification/removal/non-article page")
         if "/wappoc_appmsgcaptcha" in urlsplit(final_url).path:
             raise CaptureError("server redirected to a CAPTCHA page")
-        title_tag = soup.find(id="activity-name")
+        title_tag = soup.find("h1") if mirror else soup.find(id="activity-name")
         title = title_tag.get_text(" ", strip=True) if title_tag else ""
-        if not title:
+        if not title and not mirror:
             og_title = soup.find("meta", attrs={"property": "og:title"})
             title = str(og_title.get("content", "")).strip() if og_title else ""
-        if not title and soup.title:
+        if not title and not mirror and soup.title:
             title = soup.title.get_text(" ", strip=True)
         if not title or title in ("微信公众平台", "环境异常", "验证", "文章已删除"):
             raise CaptureError("article title is missing or is a verification/removal title")
@@ -343,6 +397,12 @@ def capture(args, dependencies) -> tuple[dict, int]:
         for active in body.find_all(("script", "style", "template")):
             active.decompose()
         image_tags = body.find_all("img")
+        if mirror and not body_has_source(body, args.url):
+            raise CaptureError("public reprint body does not contain the exact original WeChat URL")
+        if mirror:
+            attempt["provenance_match"] = "exact original URL within entry-content text or anchor"
+        if mirror and len(body.get_text(" ", strip=True).replace(args.url, "").strip()) < 40 and not image_tags:
+            raise CaptureError("public reprint body contains no substantive article content")
         if not body.get_text(strip=True) and not image_tags:
             raise CaptureError("article body has neither text nor images")
         missing = []
@@ -353,7 +413,7 @@ def capture(args, dependencies) -> tuple[dict, int]:
             backgrounds.extend(re.findall(r"url\(\s*['\"]?(.*?)['\"]?\s*\)", style, re.I))
         for index, _ in enumerate(backgrounds, 1):
             missing.append({"kind": "background_image", "detail": f"原文背景图 {index} 未转换为正文图片，请对照原页面检查。"})
-        full_text = soup.get_text(" ", strip=True)
+        full_text = body.get_text(" ", strip=True) if mirror else soup.get_text(" ", strip=True)
         pay_markers = [term for term in ("付费阅读", "付费后可阅读", "付费后阅读", "购买后阅读", "剩余内容需付费", "订阅后阅读全文") if term in full_text]
         if pay_markers:
             missing.append({"kind": "paywall", "detail": "页面出现付费/订阅提示（" + "、".join(pay_markers) + "），未确认取得受限正文。"})
@@ -361,7 +421,7 @@ def capture(args, dependencies) -> tuple[dict, int]:
             missing.append({"kind": "media", "detail": "原文存在视频或未完成加载的容器，没有保存其播放内容。"})
         image_records, images_by_tag, total_bytes = [], {}, 0
         for index, tag in enumerate(image_tags, 1):
-            ref = reference_for_image(tag, imported=bool(input_html))
+            ref = reference_for_image(tag, imported=bool(input_html), mirror=mirror)
             record = {"index": index, "alt": str(tag.get("alt", "")), "status": "failed"}
             record["reference_type"] = "embedded" if ref.startswith("data:") else "remote" if ref.startswith(("https://", "http://", "//")) else "local" if input_html else "relative"
             if record["reference_type"] == "remote":
@@ -369,14 +429,18 @@ def capture(args, dependencies) -> tuple[dict, int]:
             try:
                 if not ref:
                     raise CaptureError("image has no src or data-src")
-                raw_image, origin = image_bytes(ref, input_html, args.url, session)
+                if mirror and is_mirror_placeholder(ref):
+                    raise CaptureError("public reprint default/placeholder image is not an article image")
+                raw_image, origin = image_bytes(ref, input_html, mirror_url or args.url, session, mirror=mirror)
                 metadata = inspect_image(raw_image, image_module)
+                if mirror and metadata["width"] == 1 and metadata["height"] == 1:
+                    raise CaptureError("public reprint lazy-loading pixel is not an article image")
                 lazy = str(tag.get("data-src", "")).strip()
                 if metadata["width"] == 1 and metadata["height"] == 1 and lazy and lazy != ref and (tag.get("data-ratio") or tag.get("data-w")):
                     # Browser/SingleFile exports can preserve a lazy-loading
                     # pixel instead of the article image. Never archive that
                     # pixel as a successfully captured figure.
-                    raw_image, origin = image_bytes(lazy, input_html, args.url, session)
+                    raw_image, origin = image_bytes(lazy, input_html, mirror_url or args.url, session, mirror=mirror)
                     metadata = inspect_image(raw_image, image_module)
                     if metadata["width"] == 1 and metadata["height"] == 1:
                         raise CaptureError("suspected lazy-loading placeholder; real article image was not obtained")
@@ -399,7 +463,7 @@ def capture(args, dependencies) -> tuple[dict, int]:
         if text_characters == 0 and saved == 0:
             raise CaptureError("no readable article text or successfully saved image remains")
         (output / "original.html").write_bytes(raw)
-        markdown, reading_html = render(title, args.url, blocks, missing)
+        markdown, reading_html = render(title, args.url, blocks, missing, retrieved_from=mirror_url)
         (output / "article.md").write_text(markdown, encoding="utf-8")
         (output / "reading.html").write_text(reading_html, encoding="utf-8")
         author_tag = soup.find(id="js_name") or soup.find(id="js_author_name")
@@ -415,7 +479,8 @@ def capture(args, dependencies) -> tuple[dict, int]:
             "text_characters": text_characters,
             "images": {"total": len(image_records), "saved": saved, "failed": len(image_records) - saved, "records": image_records},
             "missing": missing, "completeness": "partial" if missing else "unknown",
-            "completeness_note": "自动检测未确认完整性；需对照原页面检查正文、图片、动图、视频和加载状态。",
+            "completeness_note": ("公开转载中的正文和图片已按顺序提取；未经与微信原文比对，不能确认原文完整性。" if mirror else
+                                  "自动检测未确认完整性；需对照原页面检查正文、图片、动图、视频和加载状态。"),
         }
         write_json(output / "capture.json", metadata)
         return metadata, 0
@@ -434,7 +499,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--url", required=True, help="original https://mp.weixin.qq.com/s/… share URL")
     parser.add_argument("--output", required=True, help="new private archive directory; must not exist")
-    parser.add_argument("--html", help="import an HTML/SingleFile export instead of fetching the article")
+    input_group = parser.add_mutually_exclusive_group()
+    input_group.add_argument("--html", help="import an HTML/SingleFile export instead of fetching the article")
+    input_group.add_argument("--mirror-url", help="explicit public reprint URL at https://www.aixq.cc/<number>.html; its body must cite --url")
     args = parser.parse_args()
     try:
         from bs4 import BeautifulSoup, Tag, NavigableString, Comment
