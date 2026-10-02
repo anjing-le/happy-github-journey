@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "build": "node scripts/build.mjs"
+    "build": "node scripts/build.mjs",
+    "verify:archives": "node scripts/verify-archives.mjs"
   },
   "engines": {
     "node": ">=18"

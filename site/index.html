@@ -6,11 +6,11 @@
     <meta name="color-scheme" content="light" />
     <title>Happy GitHub Journey</title>
     <link rel="icon" type="image/png" sizes="512x512" href="/favicon.png?v=20261001" />
-    <link rel="stylesheet" href="/styles.css?v=20261001-mobile" />
-    <script type="module" src="/app.js?v=20261001-mobile"></script>
+    <link rel="stylesheet" href="/styles.css?v=20261002-inbox" />
+    <script type="module" src="/app.js?v=20261002-inbox"></script>
   </head>
   <body>
-    <main class="workspace" aria-label="三层空白交互画布">
+    <main class="workspace" aria-label="三层学习资料">
       <nav class="level-switch" aria-label="切换层级">
         <button type="button" data-jump="0" aria-label="项目与文章" aria-current="true">项目与文章</button>
         <span aria-hidden="true"></span>
@@ -34,10 +34,10 @@
       </div>
       <div class="screen-reader-only" aria-live="polite" id="status"></div>
     </main>
-    <dialog class="detail" id="block-detail" aria-label="空白块详情">
+    <dialog class="detail" id="block-detail" aria-labelledby="detail-title">
       <div class="detail-top">
         <span class="detail-indicator" aria-hidden="true"></span>
-        <span class="detail-title" aria-hidden="true"></span>
+        <h2 class="detail-title" id="detail-title"></h2>
         <a class="source-link" target="_blank" rel="noopener noreferrer" aria-label="查看来源" hidden>
           <span>来源</span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M11 4h5v5m0-5-8 8M7 4H4v12h12v-3"/></svg>
         </a>
@@ -46,8 +46,10 @@
         </button>
       </div>
       <div class="detail-scroll">
-        <div class="detail-space" aria-hidden="true">
-          <span></span><span></span><span></span>
+        <div class="detail-content">
+          <p class="detail-meta"></p>
+          <p class="detail-summary" hidden></p>
+          <div class="detail-body"></div>
         </div>
       </div>
     </dialog>

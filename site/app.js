@@ -1,7 +1,7 @@
 import { createBoardState } from './board-state.js';
-import { sourceUrlFor } from './content.js';
+import { catalog, itemFor, sourceUrlFor } from './content.js';
 
-const state = createBoardState();
+const state = createBoardState(catalog);
 const columns = [...document.querySelectorAll('.column')];
 const board = document.querySelector('.board');
 const detail = document.querySelector('.detail');
@@ -15,12 +15,88 @@ let detailTarget = null;
 let activeLevel = 0;
 let boardWidth = board.clientWidth;
 
+const statusLabels = { pending: '待解析', draft: '待校准', reviewed: '已认可' };
+const typeLabels = { article: '文章', 'open-source': '开源项目' };
+
+function statusLabel(item) {
+  return statusLabels[item.status] ?? item.status ?? '';
+}
+
+function archiveLabels(item) {
+  if (!item.archive) return [];
+  if (item.archive.status === 'pending') return ['待存档'];
+  if (item.archive.status !== 'saved') return [];
+  const completenessLabels = {
+    partial: '存档不完整',
+    unknown: '存档完整性待核对',
+    checked: '存档已核对',
+  };
+  return ['存档已保存', completenessLabels[item.archive.completeness] ?? completenessLabels.unknown];
+}
+
+// Use textContent throughout: saved Markdown never becomes executable HTML.
+function renderBody(container, value) {
+  container.replaceChildren();
+  const lines = String(value ?? '').replace(/\r\n?/g, '\n').split('\n');
+  let paragraph = [];
+  let list = null;
+  let code = null;
+  const append = (tag, text) => {
+    const node = document.createElement(tag);
+    node.textContent = text;
+    container.append(node);
+    return node;
+  };
+  const flushParagraph = () => {
+    if (paragraph.length) append('p', paragraph.join('\n'));
+    paragraph = [];
+  };
+  for (const line of lines) {
+    if (line.trimStart().startsWith('```')) {
+      flushParagraph();
+      list = null;
+      if (code) code = null;
+      else code = append('pre', '').appendChild(document.createElement('code'));
+      continue;
+    }
+    if (code) {
+      code.textContent += `${line}\n`;
+      continue;
+    }
+    if (!line.trim()) {
+      flushParagraph();
+      list = null;
+      continue;
+    }
+    const heading = line.match(/^(#{1,6})\s+(.+)$/);
+    if (heading) {
+      flushParagraph();
+      list = null;
+      append(`h${Math.min(heading[1].length + 2, 6)}`, heading[2]);
+      continue;
+    }
+    const bullet = line.match(/^\s*(?:[-*+]\s+|\d+[.)]\s+)(.+)$/);
+    if (bullet) {
+      flushParagraph();
+      const tag = /^\s*\d/.test(line) ? 'ol' : 'ul';
+      if (!list || list.tagName.toLowerCase() !== tag) list = append(tag, '');
+      const item = document.createElement('li');
+      item.textContent = bullet[1];
+      list.append(item);
+      continue;
+    }
+    list = null;
+    paragraph.push(line);
+  }
+  flushParagraph();
+}
+
 function blockButton(id) {
-  return document.querySelector(`.block[data-id="${id}"] .block-open`);
+  return document.querySelector(`.block[data-id="${CSS.escape(id)}"] .block-open`);
 }
 
 function detailButton(id) {
-  return document.querySelector(`.block[data-id="${id}"] .detail-button`);
+  return document.querySelector(`.block[data-id="${CSS.escape(id)}"] .detail-button`);
 }
 
 function render(animate = false) {
@@ -33,35 +109,47 @@ function render(animate = false) {
     const list = column.querySelector('.slots');
     list.replaceChildren();
     visible[level].forEach(id => {
-      const originalIndex = Number(id.split('-').at(-1)) - 1;
+      const item = itemFor(id);
       const slot = document.createElement('li');
       slot.className = 'slot';
       const block = document.createElement('div');
       block.className = 'block';
       block.dataset.id = id;
       block.dataset.level = level;
-      block.style.setProperty('--line-width', `${[52, 66, 44, 59, 48][originalIndex]}%`);
       const isActive = selected[level] === id;
       block.classList.toggle('is-active', isActive);
       block.classList.toggle('is-related', related[level].includes(id));
       const select = document.createElement('button');
       select.type = 'button';
       select.className = 'block-open';
-      select.setAttribute('aria-label', `选中第${level + 1}层空白块${originalIndex + 1}`);
+      select.setAttribute('aria-label', `筛选 ${item.title}`);
       select.setAttribute('aria-pressed', String(isActive));
-      select.innerHTML = '<span class="block-dot" aria-hidden="true"></span>';
+      const dot = document.createElement('span');
+      dot.className = 'block-dot';
+      dot.setAttribute('aria-hidden', 'true');
+      select.append(dot);
       select.addEventListener('click', () => selectBlock(level, id));
       select.addEventListener('keydown', event => onBlockKey(event, level, id));
       const open = document.createElement('button');
       open.type = 'button';
       open.className = 'detail-button';
-      open.setAttribute('aria-label', `查看第${level + 1}层空白块${originalIndex + 1}详情`);
+      open.setAttribute('aria-label', `查看 ${item.title} 详情`);
       open.setAttribute('aria-haspopup', 'dialog');
       open.setAttribute('aria-controls', detail.id);
-      open.innerHTML = '<span class="block-title" aria-hidden="true"></span>';
+      const title = document.createElement('span');
+      title.className = 'block-title';
+      title.textContent = item.title;
+      open.append(title);
       open.addEventListener('click', () => openDetail(level, id));
       open.addEventListener('keydown', event => onBlockKey(event, level, id, true));
       block.append(select, open);
+      const label = statusLabel(item);
+      if (label) {
+        const badge = document.createElement('span');
+        badge.className = 'block-status';
+        badge.textContent = label;
+        block.append(badge);
+      }
       slot.append(block);
       list.append(slot);
     });
@@ -94,8 +182,16 @@ function selectBlock(level, id) {
 }
 
 function openDetail(level, id) {
+  const item = itemFor(id);
   detailTarget = id;
   detail.dataset.level = String(level);
+  detail.querySelector('.detail-title').textContent = item.title;
+  const metadata = [typeLabels[item.type] ?? item.type, statusLabel(item), ...archiveLabels(item), item.receivedAt ? `收录于 ${item.receivedAt}` : ''].filter(Boolean);
+  detail.querySelector('.detail-meta').textContent = metadata.join(' · ');
+  const summary = detail.querySelector('.detail-summary');
+  summary.hidden = !item.summary;
+  summary.textContent = item.summary ?? '';
+  renderBody(detail.querySelector('.detail-body'), item.body);
   const url = level === 0 ? sourceUrlFor(id) : null;
   sourceLink.hidden = !url;
   if (url) sourceLink.href = url;
@@ -113,7 +209,7 @@ function onBlockKey(event, level, id, isDetail = false) {
   const nextIndex = ids.indexOf(id) + (event.key === 'ArrowUp' ? -1 : 1);
   if (nextIndex < 0 || nextIndex >= ids.length) return;
   const button = isDetail ? detailButton(ids[nextIndex]) : blockButton(ids[nextIndex]);
-  button?.focus({ preventScroll: true });
+  button?.focus();
 }
 
 closeButton.addEventListener('click', () => closeDetail(true));

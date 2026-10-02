@@ -1,14 +1,19 @@
-// Blank interaction scaffolding. Fill these with real provenance when adding material.
-export const SOURCE_URLS = {
-  'source-1': null,
-  'source-2': null,
-  'source-3': null,
-  'source-4': null,
-  'source-5': null,
-};
+import { catalog } from './catalog.js';
+
+export { catalog };
+
+const items = new Map([
+  ...catalog.sources,
+  ...catalog.designs,
+  ...catalog.technologies,
+].map(item => [item.id, item]));
+
+export function itemFor(id) {
+  return items.get(id) ?? null;
+}
 
 export function sourceUrlFor(id) {
-  const value = SOURCE_URLS[id];
+  const value = catalog.sources.find(item => item.id === id)?.url;
   if (typeof value !== 'string' || !value.trim()) return null;
   try {
     const url = new URL(value.trim());

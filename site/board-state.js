@@ -1,31 +1,11 @@
-const INITIAL_LEVELS = [
-  ['source-1', 'source-2', 'source-3', 'source-4', 'source-5'],
-  ['design-1', 'design-2', 'design-3', 'design-4', 'design-5'],
-  ['tech-1', 'tech-2', 'tech-3', 'tech-4', 'tech-5'],
-];
-
-const SOURCE_DESIGNS = {
-  'source-1': ['design-1', 'design-2'],
-  'source-2': ['design-2', 'design-3'],
-  'source-3': ['design-3'],
-  'source-4': ['design-4', 'design-5'],
-  'source-5': ['design-5'],
-};
-
-const DESIGN_TECHNOLOGIES = {
-  'design-1': ['tech-1', 'tech-2'],
-  'design-2': ['tech-2', 'tech-3'],
-  'design-3': ['tech-3'],
-  'design-4': ['tech-4'],
-  'design-5': ['tech-4', 'tech-5'],
-};
-
 function collectForward(links, ids) {
   return new Set(ids.flatMap((id) => links[id] ?? []));
 }
 
-export function createBoardState() {
-  const levels = INITIAL_LEVELS.map((ids) => [...ids]);
+export function createBoardState(catalog) {
+  const levels = [catalog.sources, catalog.designs, catalog.technologies].map(items => items.map(item => item.id));
+  const sourceDesigns = Object.fromEntries(catalog.sources.map(item => [item.id, item.designs]));
+  const designTechnologies = Object.fromEntries(catalog.designs.map(item => [item.id, item.technologies]));
   const selected = [null, null, null];
 
   function assertLevel(level) {
@@ -49,14 +29,14 @@ export function createBoardState() {
     const related = [[], [], []];
 
     if (selected[0] !== null) {
-      const designs = collectForward(SOURCE_DESIGNS, [selected[0]]);
+      const designs = collectForward(sourceDesigns, [selected[0]]);
       visible[1] = levels[1].filter((id) => designs.has(id));
       related[1] = [...visible[1]];
     }
 
     if (selected[1] !== null || selected[0] !== null) {
       const designs = selected[1] === null ? visible[1] : [selected[1]];
-      const technologies = collectForward(DESIGN_TECHNOLOGIES, designs);
+      const technologies = collectForward(designTechnologies, designs);
       visible[2] = levels[2].filter((id) => technologies.has(id));
       related[2] = [...visible[2]];
     }
