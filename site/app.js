@@ -265,13 +265,10 @@ function makeBlock(level, id) {
   select.setAttribute('aria-label', `查看 ${item.title} 的关系；双击查看详情`);
   select.setAttribute('aria-keyshortcuts', 'F2');
   select.title = '悬停预览关系，单击选择，双击看详情';
-  const dot = document.createElement('span');
-  dot.className = 'block-dot';
-  dot.setAttribute('aria-hidden', 'true');
   const title = document.createElement('span');
   title.className = 'block-title';
   title.textContent = item.title;
-  select.append(dot, title);
+  select.append(title);
   block.addEventListener('pointerenter', event => previewBlock(event, level, id));
   block.addEventListener('pointerleave', () => {
     if (previewTarget?.id === id) clearPreview();
@@ -318,7 +315,11 @@ function makeBlock(level, id) {
   const open = document.createElement('button');
   open.type = 'button';
   open.className = 'detail-button';
-  open.textContent = '详情 ↗';
+  open.title = '查看详情';
+  const hole = document.createElement('span');
+  hole.className = 'block-hole';
+  hole.setAttribute('aria-hidden', 'true');
+  open.append(hole);
   open.setAttribute('aria-label', `查看 ${item.title} 详情`);
   open.setAttribute('aria-haspopup', 'dialog');
   open.setAttribute('aria-controls', detail.id);
@@ -330,15 +331,22 @@ function makeBlock(level, id) {
   copy.setAttribute('aria-label', `复制 ${item.title} 的内容`);
   copy.dataset.copyHint = `复制标题、摘要和正文${level === 0 ? '及来源链接' : ''}，可粘贴给 AI`;
   const copyIcon = document.createElementNS(svgNamespace, 'svg');
-  copyIcon.setAttribute('viewBox', '0 0 20 20');
+  copyIcon.setAttribute('viewBox', '0 0 24 24');
   copyIcon.setAttribute('aria-hidden', 'true');
   const iconPath = document.createElementNS(svgNamespace, 'path');
-  iconPath.setAttribute('d', 'M7 7h9v10H7z M4 13H3V3h9v1');
+  iconPath.setAttribute('d', 'M16 8V6a3 3 0 0 0-3-3H6a3 3 0 0 0-3 3v7a3 3 0 0 0 3 3h2');
+  const sheet = document.createElementNS(svgNamespace, 'rect');
+  sheet.setAttribute('x', '8');
+  sheet.setAttribute('y', '8');
+  sheet.setAttribute('width', '13');
+  sheet.setAttribute('height', '13');
+  sheet.setAttribute('rx', '3');
+  sheet.classList.add('copy-icon');
   const checkPath = document.createElementNS(svgNamespace, 'path');
-  checkPath.setAttribute('d', 'm5 10 3 3 7-7');
+  checkPath.setAttribute('d', 'm7 12 3 3 7-7');
   checkPath.classList.add('copy-check');
   iconPath.classList.add('copy-icon');
-  copyIcon.append(iconPath, checkPath);
+  copyIcon.append(iconPath, sheet, checkPath);
   const tooltip = document.createElement('span');
   tooltip.className = 'action-tooltip';
   tooltip.id = `copy-hint-${id}`;
@@ -348,13 +356,6 @@ function makeBlock(level, id) {
   copy.append(copyIcon, tooltip);
   copy.addEventListener('click', () => copyBlock(level, id, copy, tooltip));
   block.append(select, open, copy);
-  const label = statusLabel(item);
-  if (label) {
-    const badge = document.createElement('span');
-    badge.className = 'block-status';
-    badge.textContent = label;
-    block.append(badge);
-  }
   slot.append(block);
   return slot;
 }
