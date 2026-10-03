@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { cp, readFile, rm, writeFile } from "node:fs/promises"
+import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 import { dirname, join } from "node:path"
 import { loadCatalog } from "./catalog.mjs"
@@ -23,7 +23,17 @@ function replaceOnce(content, expected, replacement, file, label) {
 }
 
 // Validate the Markdown source before replacing a previously successful build.
-const catalog = await loadCatalog(root)
+const completeCatalog = await loadCatalog(root)
+const details = new Map()
+const catalog = Object.fromEntries(Object.entries(completeCatalog).map(([group, items]) => [
+  group,
+  items.map(({ body, ...metadata }) => {
+    const payload = `${JSON.stringify({ id: metadata.id, body })}\n`
+    const filename = `${createHash("sha256").update(payload).digest("hex")}.json`
+    details.set(filename, payload)
+    return { ...metadata, bodyUrl: `/details/${filename}` }
+  }),
+]))
 const json = JSON.stringify(catalog, null, 2)
 const moduleJson = json.replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029")
 const catalogModule = `// Generated from content/**/*.md; do not edit.\nexport const catalog = ${moduleJson};\n`
@@ -45,6 +55,9 @@ index = replaceOnce(index, /src="\/app\.js(?:\?[^"\s]*)?"/g,
 
 await rm(output, { recursive: true, force: true })
 await cp(source, output, { recursive: true })
+await mkdir(join(output, "details"), { recursive: true })
+await Promise.all([...details].map(([filename, payload]) =>
+  writeFile(join(output, "details", filename), payload)))
 await writeFile(join(output, "catalog.json"), `${json}\n`)
 await writeFile(join(output, "catalog.js"), catalogModule)
 await writeFile(join(output, "content.js"), contentModule)

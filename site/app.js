@@ -1,5 +1,5 @@
 import { createBoardState } from './board-state.js';
-import { catalog, itemFor, sourceUrlFor } from './content.js';
+import { catalog, itemFor, sourceUrlFor, loadItem, cachedItemFor } from './content.js';
 
 const state = createBoardState(catalog);
 const columns = [...document.querySelectorAll('.column')];
@@ -13,15 +13,25 @@ const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const mobileLayout = matchMedia('(max-width: 720px)');
 const hoverPreview = matchMedia('(hover: hover) and (pointer: fine)');
 const selectionPath = document.querySelector('.selection-path');
+const sourceSearch = document.querySelector('#source-search');
+const sourceType = document.querySelector('#source-type');
+const sourceStatus = document.querySelector('#source-status');
+const catalogTools = document.querySelector('.catalog-tools');
+const sourceFilters = document.querySelector('.source-filters');
+const emptyState = document.querySelector('.empty-state');
+const blockNodes = new Map();
+const copyTimers = new WeakMap();
 let previewTarget = null;
 let viewSnapshot = state.snapshot();
 let pathSelection = '';
 let detailTarget = null;
+let detailRequestVersion = 0;
 let activeLevel = 0;
 let boardWidth = board.clientWidth;
 let summaryTarget = null;
 let summaryTimer = null;
 let summaryFrame = null;
+let searchTimer = null;
 
 const summaryBubble = document.createElement('div');
 summaryBubble.className = 'summary-bubble';
@@ -32,6 +42,49 @@ document.body.append(summaryBubble);
 
 const statusLabels = { pending: '待解析', draft: '待校准', reviewed: '已认可' };
 const typeLabels = { article: '文章', 'open-source': '开源项目' };
+
+for (const type of new Set(['article', 'open-source', ...catalog.sources.map(item => item.type)])) {
+  const option = document.createElement('option');
+  option.value = type;
+  option.textContent = typeLabels[type] ?? type;
+  sourceType.append(option);
+}
+
+function applySourceFilter() {
+  clearTimeout(searchTimer);
+  hideSummary();
+  previewTarget = null;
+  const snapshot = state.setSourceFilter({ query: sourceSearch.value, type: sourceType.value, status: sourceStatus.value });
+  sourceFilters.classList.toggle('has-filter', Boolean(sourceType.value || sourceStatus.value));
+  render();
+  status.textContent = `找到 ${snapshot.visible[0].length} 条素材`;
+}
+
+sourceSearch.addEventListener('input', event => {
+  clearTimeout(searchTimer);
+  if (event.isComposing) return;
+  searchTimer = setTimeout(applySourceFilter, 150);
+});
+sourceSearch.addEventListener('compositionstart', () => clearTimeout(searchTimer));
+sourceSearch.addEventListener('compositionend', applySourceFilter);
+sourceSearch.addEventListener('search', applySourceFilter);
+sourceType.addEventListener('change', applySourceFilter);
+sourceStatus.addEventListener('change', applySourceFilter);
+catalogTools.addEventListener('submit', event => {
+  event.preventDefault();
+  applySourceFilter();
+  sourceFilters.open = false;
+});
+catalogTools.addEventListener('reset', event => {
+  event.preventDefault();
+  sourceSearch.value = '';
+  sourceType.value = '';
+  sourceStatus.value = '';
+  applySourceFilter();
+});
+document.addEventListener('click', event => {
+  if (!sourceFilters.contains(event.target)) sourceFilters.open = false;
+});
 
 function statusLabel(item) {
   return statusLabels[item.status] ?? item.status ?? '';
@@ -137,11 +190,13 @@ function renderBody(container, value) {
 }
 
 function blockButton(id) {
-  return document.querySelector(`.block[data-id="${CSS.escape(id)}"] .block-open`);
+  const node = blockNodes.get(id)?.select;
+  return node?.isConnected ? node : null;
 }
 
 function detailButton(id) {
-  return document.querySelector(`.block[data-id="${CSS.escape(id)}"] .detail-button`);
+  const node = blockNodes.get(id)?.open;
+  return node?.isConnected ? node : null;
 }
 
 function hideSummary() {
@@ -271,12 +326,18 @@ function drawLines() {
   if (mobileLayout.matches || !viewSnapshot.focus) return;
   const boardRect = board.getBoundingClientRect();
   relationLines.setAttribute('viewBox', `0 0 ${boardRect.width} ${boardRect.height}`);
+  const positions = new Map();
+  for (const ids of viewSnapshot.visible) {
+    for (const id of ids) {
+      const block = blockNodes.get(id)?.block;
+      if (block?.isConnected) positions.set(id, block.getBoundingClientRect());
+    }
+  }
+  const paths = document.createDocumentFragment();
   for (const edge of viewSnapshot.edges) {
-    const from = blockButton(edge.fromId)?.closest('.block');
-    const to = blockButton(edge.toId)?.closest('.block');
-    if (!from || !to) continue;
-    const a = from.getBoundingClientRect();
-    const b = to.getBoundingClientRect();
+    const a = positions.get(edge.fromId);
+    const b = positions.get(edge.toId);
+    if (!a || !b) continue;
     const x1 = a.right - boardRect.left;
     const y1 = a.top + a.height / 2 - boardRect.top;
     const x2 = b.left - boardRect.left;
@@ -287,8 +348,9 @@ function drawLines() {
     path.classList.add('relation-line');
     path.classList.toggle('is-highlighted', edge.highlight);
     path.dataset.level = String(edge.toLevel);
-    relationLines.append(path);
+    paths.append(path);
   }
+  relationLines.append(paths);
 }
 
 function copyTextFor(level, item) {
@@ -303,24 +365,51 @@ function copyTextFor(level, item) {
 }
 
 async function copyBlock(level, id, button, tooltip) {
-  const item = itemFor(id);
+  if (button.getAttribute('aria-busy') === 'true') return;
+  clearTimeout(copyTimers.get(button));
+  button.classList.remove('is-copied', 'copy-failed');
+  button.setAttribute('aria-busy', 'true');
+  tooltip.textContent = '正在复制…';
+  const cached = cachedItemFor(id);
+  const prepared = loadItem(id);
+  // ClipboardItem receives the Promise during the click, preserving the user
+  // gesture while a cold-cache detail request finishes (including Safari).
   try {
-    await navigator.clipboard.writeText(copyTextFor(level, item));
-    button.classList.add('is-copied');
-    tooltip.textContent = '已复制';
+    if (cached) await navigator.clipboard.writeText(copyTextFor(level, cached));
+    else if (navigator.clipboard?.write && typeof ClipboardItem === 'function') {
+      const text = prepared.then(item => new Blob([copyTextFor(level, item)], { type: 'text/plain' }));
+      text.catch(() => {}); // Older clipboard APIs may reject before consuming it.
+      await navigator.clipboard.write([new ClipboardItem({ 'text/plain': text })]);
+    } else {
+      await prepared;
+      throw new Error('A second click is needed to copy prepared content');
+    }
+    const item = await prepared;
+    if (button.isConnected) {
+      button.classList.add('is-copied');
+      tooltip.textContent = '已复制';
+    }
     status.textContent = `已复制 ${item.title} 的标题、摘要和正文${level === 0 ? '及来源链接' : ''}`;
-    setTimeout(() => {
+    copyTimers.set(button, setTimeout(() => {
       button.classList.remove('is-copied');
       tooltip.textContent = button.dataset.copyHint;
-    }, 1800);
+    }, 1800));
   } catch {
-    tooltip.textContent = '复制失败，请打开详情后手动复制';
-    status.textContent = tooltip.textContent;
-    button.classList.add('copy-failed');
-    setTimeout(() => {
+    // A rejected clipboard operation may finish before its shared request.
+    // Finish preparing the text so another user click can use the cache.
+    await prepared.catch(() => null);
+    const message = cachedItemFor(id) ? '内容已准备，请再点复制或打开详情手动复制' : '内容加载失败，请重试';
+    status.textContent = message;
+    if (button.isConnected) {
+      tooltip.textContent = message;
+      button.classList.add('copy-failed');
+    }
+    copyTimers.set(button, setTimeout(() => {
       button.classList.remove('copy-failed');
       tooltip.textContent = button.dataset.copyHint;
-    }, 3000);
+    }, 3000));
+  } finally {
+    button.removeAttribute('aria-busy');
   }
 }
 
@@ -437,6 +526,7 @@ function makeBlock(level, id) {
   copy.addEventListener('click', () => copyBlock(level, id, copy, tooltip));
   block.append(select, open, copy);
   slot.append(block);
+  blockNodes.set(id, { block, select, open });
   return slot;
 }
 
@@ -447,7 +537,11 @@ function render() {
     const list = column.querySelector('.slots');
     const existing = new Map([...list.children].map(slot => [slot.firstElementChild.dataset.id, slot]));
     const wanted = new Set(visible[level]);
-    for (const [id, slot] of existing) if (!wanted.has(id)) slot.remove();
+    const relatedIds = new Set(related[level]);
+    const dimmedIds = new Set(dimmed[level]);
+    for (const [id, slot] of existing) {
+      if (!wanted.has(id)) { slot.remove(); blockNodes.delete(id); }
+    }
     displayOrder[level].forEach((id, index) => {
       const slot = existing.get(id) ?? makeBlock(level, id);
       // Do not detach unchanged cards: preserve focus, double clicks and tooltips.
@@ -455,13 +549,15 @@ function render() {
       const block = slot.firstElementChild;
       const isActive = selected[level] === id;
       block.classList.toggle('is-active', isActive);
-      block.classList.toggle('is-related', related[level].includes(id));
-      block.classList.toggle('is-dimmed', dimmed[level].includes(id));
+      block.classList.toggle('is-related', relatedIds.has(id));
+      block.classList.toggle('is-dimmed', dimmedIds.has(id));
       block.classList.toggle('is-preview', previewTarget?.id === id && !isActive);
       block.querySelector('.block-open').setAttribute('aria-pressed', String(isActive));
     });
     switches[level].classList.toggle('has-related', related[level].length > 0);
   });
+  emptyState.hidden = visible[0].length > 0;
+  emptyState.textContent = catalog.sources.length ? '没有匹配素材' : '暂无素材';
   renderSelectionPath(selected);
   scheduleLines();
   if (summaryTarget) {
@@ -474,6 +570,7 @@ function render() {
 }
 
 function closeDetail(restoreFocus = false) {
+  detailRequestVersion += 1;
   const id = detailTarget;
   detail.close();
   detailTarget = null;
@@ -485,11 +582,11 @@ function selectBlock(level, id) {
   previewTarget = null;
   // A transient source preview can contain cards outside the fixed scope.
   if (!state.visible[level].includes(id)) { render(); return; }
-  const { selected, visible } = state.select(level, id);
+  const { selected, visible, related } = state.select(level, id);
   render();
   blockButton(id)?.focus({ preventScroll: true });
   const counts = visible.map((ids, index) => `${columns[index].getAttribute('aria-label')} ${ids.length} 个块`).join('，');
-  const relatedCount = state.related[2].length;
+  const relatedCount = related[2].length;
   const relationHint = selected.some(Boolean) ? `突出 ${relatedCount} 个关联技术，其余淡化` : '显示全部卡片';
   status.textContent = `${selected[level] === id ? '已选中' : '已取消选择'}，${counts}；${relationHint}`;
 }
@@ -506,7 +603,7 @@ function openDetail(level, id) {
   const summary = detail.querySelector('.detail-summary');
   summary.hidden = !item.summary;
   summary.textContent = item.summary ?? '';
-  renderBody(detail.querySelector('.detail-body'), item.body);
+  const request = ++detailRequestVersion;
   const url = level === 0 ? sourceUrlFor(id) : null;
   sourceLink.hidden = !url;
   if (url) sourceLink.href = url;
@@ -515,6 +612,40 @@ function openDetail(level, id) {
   if (!detail.open) detail.showModal();
   document.body.classList.add('detail-open');
   closeButton.focus({ preventScroll: true });
+  loadDetailBody(id, request);
+}
+
+async function loadDetailBody(id, request) {
+  const body = detail.querySelector('.detail-body');
+  const isCurrent = () => detail.open && detailTarget === id && detailRequestVersion === request;
+  if (!isCurrent()) return;
+  body.setAttribute('aria-busy', 'true');
+  const loading = document.createElement('p');
+  loading.className = 'body-state';
+  loading.textContent = '正在加载正文…';
+  body.replaceChildren(loading);
+  try {
+    const item = await loadItem(id);
+    if (isCurrent()) renderBody(body, item.body);
+  } catch {
+    if (!isCurrent()) return;
+    const failure = document.createElement('div');
+    failure.className = 'body-state';
+    const message = document.createElement('span');
+    message.textContent = '正文加载失败，可重试或刷新页面';
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.textContent = '重试';
+    retry.addEventListener('click', () => loadDetailBody(id, request));
+    const refresh = document.createElement('button');
+    refresh.type = 'button';
+    refresh.textContent = '刷新页面';
+    refresh.addEventListener('click', () => location.reload());
+    failure.append(message, retry, refresh);
+    body.replaceChildren(failure);
+  } finally {
+    if (isCurrent()) body.removeAttribute('aria-busy');
+  }
 }
 
 function onBlockKey(event, level, id, isDetail = false) {
@@ -586,6 +717,10 @@ window.addEventListener('resize', () => {
 window.addEventListener('blur', () => { hideSummary(); clearPreview(); });
 document.addEventListener('scroll', hideSummary, { capture: true, passive: true });
 document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && sourceFilters.open) {
+    sourceFilters.open = false;
+    if (sourceFilters.contains(document.activeElement)) sourceFilters.querySelector('summary').focus();
+  }
   if (event.key === 'Escape' && !summaryBubble.hidden) hideSummary();
   clearPreview();
 }, { capture: true });
