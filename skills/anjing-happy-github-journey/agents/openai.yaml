@@ -1,4 +1,4 @@
 interface:
-  display_name: "anjing-happy-github-journey"
+  display_name: "安静の GitHub Journey"
   short_description: "收录项目与文章，逐条校准关键设计和技术原理，再处理待解析素材"
   default_prompt: "使用 $anjing-happy-github-journey 收录素材，并用第一篇完整原文生成三层拆解初稿，供我校准粒度。"

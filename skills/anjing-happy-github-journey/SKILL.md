@@ -1,9 +1,9 @@
 ---
 name: anjing-happy-github-journey
-description: 为 Happy GitHub Journey 收录文章和开源项目，保留链接与原件，标记待解析，并逐条校准关键设计和技术原理。用于本项目明确的素材收录、学习拆解和反馈修订请求。
+description: 安静の GitHub Journey。为 Happy GitHub Journey 收录文章和开源项目，保留链接与原件，标记待解析，并逐条校准关键设计和技术原理。用于本项目明确的素材收录、学习拆解和反馈修订请求。
 ---
 
-# Anjing Happy GitHub Journey
+# 安静の GitHub Journey
 
 把素材拆成可以关联、复用的知识，帮助用户形成自己的设计判断。
 
