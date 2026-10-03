@@ -129,70 +129,201 @@ function detailButton(id) {
   return document.querySelector(`.block[data-id="${CSS.escape(id)}"] .detail-button`);
 }
 
-function render(animate = false) {
-  const oldRects = new Map();
-  if (animate && !reducedMotion.matches) {
-    document.querySelectorAll('.block').forEach(block => oldRects.set(block.dataset.id, block.getBoundingClientRect()));
+const svgNamespace = 'http://www.w3.org/2000/svg';
+const relationLines = document.createElementNS(svgNamespace, 'svg');
+relationLines.classList.add('relation-lines');
+relationLines.setAttribute('aria-hidden', 'true');
+board.prepend(relationLines);
+let lineFrame = null;
+
+function scheduleLines() {
+  cancelAnimationFrame(lineFrame);
+  lineFrame = requestAnimationFrame(drawLines);
+}
+
+function drawLines() {
+  relationLines.replaceChildren();
+  if (mobileLayout.matches || !state.selected.some(Boolean)) return;
+  const boardRect = board.getBoundingClientRect();
+  relationLines.setAttribute('viewBox', `0 0 ${boardRect.width} ${boardRect.height}`);
+  for (const edge of state.snapshot().edges) {
+    const from = blockButton(edge.fromId)?.closest('.block');
+    const to = blockButton(edge.toId)?.closest('.block');
+    if (!from || !to) continue;
+    const a = from.getBoundingClientRect();
+    const b = to.getBoundingClientRect();
+    const x1 = a.right - boardRect.left;
+    const y1 = a.top + a.height / 2 - boardRect.top;
+    const x2 = b.left - boardRect.left;
+    const y2 = b.top + b.height / 2 - boardRect.top;
+    const bend = (x2 - x1) * .5;
+    const path = document.createElementNS(svgNamespace, 'path');
+    path.setAttribute('d', `M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`);
+    path.classList.add('relation-line');
+    path.classList.toggle('is-highlighted', edge.highlight);
+    path.dataset.level = String(edge.toLevel);
+    relationLines.append(path);
   }
-  const { visible, related, selected } = state.snapshot();
+}
+
+function copyTextFor(level, item) {
+  const url = level === 0 ? sourceUrlFor(item.id) : null;
+  return [
+    `# ${item.title}`,
+    statusLabel(item) ? `状态：${statusLabel(item)}` : '',
+    item.summary ?? '',
+    url ? `来源：${url}` : '',
+    item.body ?? '',
+  ].filter(Boolean).join('\n\n');
+}
+
+async function copyBlock(level, id, button, tooltip) {
+  const item = itemFor(id);
+  try {
+    await navigator.clipboard.writeText(copyTextFor(level, item));
+    button.classList.add('is-copied');
+    tooltip.textContent = '已复制';
+    status.textContent = `已复制 ${item.title} 的标题、摘要和正文${level === 0 ? '及来源链接' : ''}`;
+    setTimeout(() => {
+      button.classList.remove('is-copied');
+      tooltip.textContent = button.dataset.copyHint;
+    }, 1800);
+  } catch {
+    tooltip.textContent = '复制失败，请打开详情后手动复制';
+    status.textContent = tooltip.textContent;
+    button.classList.add('copy-failed');
+    setTimeout(() => {
+      button.classList.remove('copy-failed');
+      tooltip.textContent = button.dataset.copyHint;
+    }, 3000);
+  }
+}
+
+function makeBlock(level, id) {
+  const item = itemFor(id);
+  const slot = document.createElement('li');
+  slot.className = 'slot';
+  const block = document.createElement('div');
+  block.className = 'block';
+  block.dataset.id = id;
+  block.dataset.level = level;
+  const select = document.createElement('button');
+  select.type = 'button';
+  select.className = 'block-open';
+  select.setAttribute('aria-label', `查看 ${item.title} 的关系；双击查看详情`);
+  select.setAttribute('aria-keyshortcuts', 'F2');
+  select.title = '单击看关系，双击看详情';
+  const dot = document.createElement('span');
+  dot.className = 'block-dot';
+  dot.setAttribute('aria-hidden', 'true');
+  const title = document.createElement('span');
+  title.className = 'block-title';
+  title.textContent = item.title;
+  select.append(dot, title);
+  // Defer pointer clicks briefly so double click opens without toggling selection.
+  // Keep the same DOM button so its second click can emit dblclick.
+  let clickTimer = null;
+  let beforePointerClick = null;
+  let clickApplied = false;
+  select.addEventListener('click', event => {
+    if (event.detail === 0) selectBlock(level, id);
+    else if (event.detail === 1) {
+      clearTimeout(clickTimer);
+      beforePointerClick = state.selected;
+      clickApplied = false;
+      clickTimer = setTimeout(() => {
+        if (select.isConnected) {
+          selectBlock(level, id);
+          clickApplied = true;
+        }
+      }, 280);
+    }
+  });
+  select.addEventListener('dblclick', () => {
+    clearTimeout(clickTimer);
+    // A slower system double click may arrive after the single-click delay.
+    if (clickApplied && beforePointerClick) {
+      state.clearSelection();
+      beforePointerClick.forEach((previous, previousLevel) => {
+        if (previous) state.select(previousLevel, previous);
+      });
+      render();
+    }
+    clickApplied = false;
+    openDetail(level, id);
+  });
+  select.addEventListener('keydown', event => {
+    if (event.key === 'F2') {
+      clearTimeout(clickTimer);
+      event.preventDefault();
+      openDetail(level, id);
+    } else onBlockKey(event, level, id);
+  });
+  const open = document.createElement('button');
+  open.type = 'button';
+  open.className = 'detail-button';
+  open.textContent = '详情 ↗';
+  open.setAttribute('aria-label', `查看 ${item.title} 详情`);
+  open.setAttribute('aria-haspopup', 'dialog');
+  open.setAttribute('aria-controls', detail.id);
+  open.addEventListener('click', () => openDetail(level, id));
+  open.addEventListener('keydown', event => onBlockKey(event, level, id, true));
+  const copy = document.createElement('button');
+  copy.type = 'button';
+  copy.className = 'copy-button';
+  copy.setAttribute('aria-label', `复制 ${item.title} 的内容`);
+  copy.dataset.copyHint = `复制标题、摘要和正文${level === 0 ? '及来源链接' : ''}，可粘贴给 AI`;
+  const copyIcon = document.createElementNS(svgNamespace, 'svg');
+  copyIcon.setAttribute('viewBox', '0 0 20 20');
+  copyIcon.setAttribute('aria-hidden', 'true');
+  const iconPath = document.createElementNS(svgNamespace, 'path');
+  iconPath.setAttribute('d', 'M7 7h9v10H7z M4 13H3V3h9v1');
+  const checkPath = document.createElementNS(svgNamespace, 'path');
+  checkPath.setAttribute('d', 'm5 10 3 3 7-7');
+  checkPath.classList.add('copy-check');
+  iconPath.classList.add('copy-icon');
+  copyIcon.append(iconPath, checkPath);
+  const tooltip = document.createElement('span');
+  tooltip.className = 'action-tooltip';
+  tooltip.id = `copy-hint-${id}`;
+  tooltip.setAttribute('role', 'tooltip');
+  tooltip.textContent = copy.dataset.copyHint;
+  copy.setAttribute('aria-describedby', tooltip.id);
+  copy.append(copyIcon, tooltip);
+  copy.addEventListener('click', () => copyBlock(level, id, copy, tooltip));
+  block.append(select, open, copy);
+  const label = statusLabel(item);
+  if (label) {
+    const badge = document.createElement('span');
+    badge.className = 'block-status';
+    badge.textContent = label;
+    block.append(badge);
+  }
+  slot.append(block);
+  return slot;
+}
+
+function render() {
+  const { visible, related, selected, dimmed } = state.snapshot();
   columns.forEach((column, level) => {
     const list = column.querySelector('.slots');
-    list.replaceChildren();
-    visible[level].forEach(id => {
-      const item = itemFor(id);
-      const slot = document.createElement('li');
-      slot.className = 'slot';
-      const block = document.createElement('div');
-      block.className = 'block';
-      block.dataset.id = id;
-      block.dataset.level = level;
+    const existing = new Map([...list.children].map(slot => [slot.firstElementChild.dataset.id, slot]));
+    const wanted = new Set(visible[level]);
+    for (const [id, slot] of existing) if (!wanted.has(id)) slot.remove();
+    visible[level].forEach((id, index) => {
+      const slot = existing.get(id) ?? makeBlock(level, id);
+      // Do not detach unchanged cards: preserve focus, double clicks and tooltips.
+      if (list.children[index] !== slot) list.insertBefore(slot, list.children[index] ?? null);
+      const block = slot.firstElementChild;
       const isActive = selected[level] === id;
       block.classList.toggle('is-active', isActive);
       block.classList.toggle('is-related', related[level].includes(id));
-      const select = document.createElement('button');
-      select.type = 'button';
-      select.className = 'block-open';
-      select.setAttribute('aria-label', `筛选 ${item.title}`);
-      select.setAttribute('aria-pressed', String(isActive));
-      const dot = document.createElement('span');
-      dot.className = 'block-dot';
-      dot.setAttribute('aria-hidden', 'true');
-      select.append(dot);
-      select.addEventListener('click', () => selectBlock(level, id));
-      select.addEventListener('keydown', event => onBlockKey(event, level, id));
-      const open = document.createElement('button');
-      open.type = 'button';
-      open.className = 'detail-button';
-      open.setAttribute('aria-label', `查看 ${item.title} 详情`);
-      open.setAttribute('aria-haspopup', 'dialog');
-      open.setAttribute('aria-controls', detail.id);
-      const title = document.createElement('span');
-      title.className = 'block-title';
-      title.textContent = item.title;
-      open.append(title);
-      open.addEventListener('click', () => openDetail(level, id));
-      open.addEventListener('keydown', event => onBlockKey(event, level, id, true));
-      block.append(select, open);
-      const label = statusLabel(item);
-      if (label) {
-        const badge = document.createElement('span');
-        badge.className = 'block-status';
-        badge.textContent = label;
-        block.append(badge);
-      }
-      slot.append(block);
-      list.append(slot);
+      block.classList.toggle('is-dimmed', dimmed[level].includes(id));
+      block.querySelector('.block-open').setAttribute('aria-pressed', String(isActive));
     });
     switches[level].classList.toggle('has-related', related[level].length > 0);
   });
-  oldRects.forEach((oldRect, id) => {
-    const block = blockButton(id)?.closest('.block');
-    if (!block) return;
-    const next = block.getBoundingClientRect();
-    if (Math.abs(oldRect.top - next.top) > 1) {
-      block.animate([{ transform: `translateY(${oldRect.top - next.top}px)` }, { transform: 'translateY(0)' }], { duration: 250, easing: 'cubic-bezier(.2,.7,.2,1)' });
-    }
-  });
+  scheduleLines();
 }
 
 function closeDetail(restoreFocus = false) {
@@ -200,15 +331,17 @@ function closeDetail(restoreFocus = false) {
   detail.close();
   detailTarget = null;
   document.body.classList.remove('detail-open');
-  if (restoreFocus && id) detailButton(id)?.focus({ preventScroll: true });
+  if (restoreFocus && id) blockButton(id)?.focus({ preventScroll: true });
 }
 
 function selectBlock(level, id) {
   const { selected, visible } = state.select(level, id);
-  render(true);
+  render();
   blockButton(id)?.focus({ preventScroll: true });
   const counts = visible.map((ids, index) => `${columns[index].getAttribute('aria-label')} ${ids.length} 个块`).join('，');
-  status.textContent = `${selected[level] === id ? '已选中' : '已取消选择'}，${counts}`;
+  const relatedCount = state.related[2].length;
+  const relationHint = selected.some(Boolean) ? `突出 ${relatedCount} 个关联技术，其余淡化` : '显示全部卡片';
+  status.textContent = `${selected[level] === id ? '已选中' : '已取消选择'}，${counts}；${relationHint}`;
 }
 
 function openDetail(level, id) {
@@ -288,5 +421,9 @@ window.addEventListener('resize', () => {
   boardWidth = board.clientWidth;
   const level = activeLevel;
   requestAnimationFrame(() => scrollToLevel(level, 'instant'));
+  scheduleLines();
 });
 render();
+
+new ResizeObserver(scheduleLines).observe(board);
+document.fonts.ready.then(scheduleLines);
