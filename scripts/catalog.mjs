@@ -40,6 +40,17 @@ function validateEntry(item, group, file) {
   if (item.summary !== undefined && typeof item.summary !== 'string') {
     fail(file, 'summary must be a string');
   }
+  if (item.preview !== undefined) {
+    if (!Array.isArray(item.preview) || !item.preview.length) {
+      fail(file, 'preview must be a non-empty array of labeled text');
+    }
+    for (const element of item.preview) {
+      if (!element || typeof element !== 'object' || Array.isArray(element)) {
+        fail(file, 'each preview element must contain a label and text');
+      }
+      for (const key of ['label', 'text']) stringField(element, key, file);
+    }
+  }
   const statuses = group === 'sources' ? SOURCE_STATUSES : DETAIL_STATUSES;
   if (!statuses.has(item.status)) {
     fail(file, `unknown status ${JSON.stringify(item.status)} for ${group}`);

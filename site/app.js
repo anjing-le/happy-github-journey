@@ -19,6 +19,16 @@ let pathSelection = '';
 let detailTarget = null;
 let activeLevel = 0;
 let boardWidth = board.clientWidth;
+let summaryTarget = null;
+let summaryTimer = null;
+let summaryFrame = null;
+
+const summaryBubble = document.createElement('div');
+summaryBubble.className = 'summary-bubble';
+summaryBubble.id = 'card-summary';
+summaryBubble.setAttribute('role', 'tooltip');
+summaryBubble.hidden = true;
+document.body.append(summaryBubble);
 
 const statusLabels = { pending: '待解析', draft: '待校准', reviewed: '已认可' };
 const typeLabels = { article: '文章', 'open-source': '开源项目' };
@@ -132,6 +142,69 @@ function blockButton(id) {
 
 function detailButton(id) {
   return document.querySelector(`.block[data-id="${CSS.escape(id)}"] .detail-button`);
+}
+
+function hideSummary() {
+  clearTimeout(summaryTimer);
+  cancelAnimationFrame(summaryFrame);
+  if (summaryTarget?.button.getAttribute('aria-describedby') === summaryBubble.id) {
+    summaryTarget.button.removeAttribute('aria-describedby');
+  }
+  summaryTarget = null;
+  summaryBubble.hidden = true;
+}
+
+function positionSummary() {
+  if (!summaryTarget?.button.isConnected || detail.open) { hideSummary(); return; }
+  const anchor = summaryTarget.button.getBoundingClientRect();
+  const width = document.documentElement.clientWidth;
+  const height = window.innerHeight;
+  const margin = 12;
+  const gap = 12;
+  if (anchor.bottom < margin || anchor.top > height - margin) { hideSummary(); return; }
+  const bounds = summaryBubble.getBoundingClientRect();
+  const center = anchor.left + anchor.width / 2;
+  const left = Math.max(margin, Math.min(center - bounds.width / 2, width - bounds.width - margin));
+  const belowFits = anchor.bottom + gap + bounds.height <= height - margin;
+  const aboveFits = anchor.top - gap - bounds.height >= margin;
+  const below = belowFits || (!aboveFits && height - anchor.bottom >= anchor.top);
+  const desiredTop = below ? anchor.bottom + gap : anchor.top - gap - bounds.height;
+  const top = Math.max(margin, Math.min(desiredTop, height - bounds.height - margin));
+  summaryBubble.dataset.placement = below ? 'below' : 'above';
+  summaryBubble.style.left = `${left}px`;
+  summaryBubble.style.top = `${top}px`;
+  summaryBubble.style.setProperty('--bubble-anchor-x', `${Math.max(18, Math.min(center - left, bounds.width - 18))}px`);
+}
+
+function showSummary(button, level, id, mode) {
+  hideSummary();
+  if (detail.open) return;
+  const item = itemFor(id);
+  const rows = Array.isArray(item.preview) ? item.preview.filter(row => row && typeof row.label === 'string' && typeof row.text === 'string' && row.text.trim()) : [];
+  if (!rows.length && item.summary) rows.push({ label: '概览', text: item.summary });
+  if (!rows.length) return;
+  summaryTarget = { button, level, id, mode };
+  summaryBubble.dataset.level = String(level);
+  const elements = document.createElement('dl');
+  for (const row of rows) {
+    const line = document.createElement('div');
+    const label = document.createElement('dt');
+    const text = document.createElement('dd');
+    label.textContent = row.label;
+    text.textContent = row.text;
+    line.append(label, text);
+    elements.append(line);
+  }
+  summaryBubble.replaceChildren(elements);
+  button.setAttribute('aria-describedby', summaryBubble.id);
+  summaryBubble.hidden = false;
+  positionSummary();
+}
+
+function hoverSummary(event, button, level, id) {
+  if (!hoverPreview.matches || mobileLayout.matches || event.pointerType !== 'mouse' || detail.open) return;
+  clearTimeout(summaryTimer);
+  summaryTimer = setTimeout(() => showSummary(button, level, id, 'pointer'), 120);
 }
 
 function clearPreview() {
@@ -264,11 +337,21 @@ function makeBlock(level, id) {
   select.className = 'block-open';
   select.setAttribute('aria-label', `查看 ${item.title} 的关系；双击查看详情`);
   select.setAttribute('aria-keyshortcuts', 'F2');
-  select.title = '悬停预览关系，单击选择，双击看详情';
   const title = document.createElement('span');
   title.className = 'block-title';
   title.textContent = item.title;
   select.append(title);
+  select.addEventListener('pointerenter', event => hoverSummary(event, select, level, id));
+  select.addEventListener('pointerleave', () => {
+    clearTimeout(summaryTimer);
+    if (summaryTarget?.id === id && summaryTarget.mode === 'pointer') hideSummary();
+  });
+  select.addEventListener('focus', () => {
+    if (select.matches(':focus-visible')) showSummary(select, level, id, 'focus');
+  });
+  select.addEventListener('blur', () => {
+    if (summaryTarget?.id === id) hideSummary();
+  });
   block.addEventListener('pointerenter', event => previewBlock(event, level, id));
   block.addEventListener('pointerleave', () => {
     if (previewTarget?.id === id) clearPreview();
@@ -384,6 +467,7 @@ function render() {
   });
   renderSelectionPath(selected);
   scheduleLines();
+  if (summaryTarget && !summaryTarget.button.isConnected) hideSummary();
 }
 
 function closeDetail(restoreFocus = false) {
@@ -408,6 +492,7 @@ function selectBlock(level, id) {
 }
 
 function openDetail(level, id) {
+  hideSummary();
   clearPreview();
   const item = itemFor(id);
   detailTarget = id;
@@ -484,6 +569,10 @@ board.addEventListener('focusin', event => {
   if (mobileLayout.matches && column) scrollToLevel(Number(column.dataset.level), 'instant');
 });
 window.addEventListener('resize', () => {
+  if (summaryTarget) {
+    cancelAnimationFrame(summaryFrame);
+    summaryFrame = requestAnimationFrame(positionSummary);
+  }
   if (mobileLayout.matches) clearPreview();
   if (board.clientWidth === boardWidth) return;
   boardWidth = board.clientWidth;
@@ -491,9 +580,15 @@ window.addEventListener('resize', () => {
   requestAnimationFrame(() => scrollToLevel(level, 'instant'));
   scheduleLines();
 });
-window.addEventListener('blur', clearPreview);
-document.addEventListener('keydown', clearPreview, { capture: true });
-hoverPreview.addEventListener('change', () => { if (!hoverPreview.matches) clearPreview(); });
+window.addEventListener('blur', () => { hideSummary(); clearPreview(); });
+document.addEventListener('scroll', hideSummary, { capture: true, passive: true });
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && !summaryBubble.hidden) hideSummary();
+  clearPreview();
+}, { capture: true });
+hoverPreview.addEventListener('change', () => {
+  if (!hoverPreview.matches) { hideSummary(); clearPreview(); }
+});
 render();
 
 new ResizeObserver(scheduleLines).observe(board);
