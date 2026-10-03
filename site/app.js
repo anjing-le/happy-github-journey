@@ -365,7 +365,7 @@ function makeBlock(level, id) {
     if (event.detail === 0) selectBlock(level, id);
     else if (event.detail === 1) {
       clearTimeout(clickTimer);
-      beforePointerClick = state.selected;
+      beforePointerClick = state.captureSelection();
       clickApplied = false;
       clickTimer = setTimeout(() => {
         if (select.isConnected) {
@@ -379,10 +379,7 @@ function makeBlock(level, id) {
     clearTimeout(clickTimer);
     // A slower system double click may arrive after the single-click delay.
     if (clickApplied && beforePointerClick) {
-      state.clearSelection();
-      beforePointerClick.forEach((previous, previousLevel) => {
-        if (previous) state.select(previousLevel, previous);
-      });
+      state.restoreSelection(beforePointerClick);
       render();
     }
     clickApplied = false;
@@ -445,13 +442,13 @@ function makeBlock(level, id) {
 
 function render() {
   viewSnapshot = previewTarget ? state.preview(previewTarget.level, previewTarget.id) : state.snapshot();
-  const { visible, related, selected, dimmed } = viewSnapshot;
+  const { visible, displayOrder, related, selected, dimmed } = viewSnapshot;
   columns.forEach((column, level) => {
     const list = column.querySelector('.slots');
     const existing = new Map([...list.children].map(slot => [slot.firstElementChild.dataset.id, slot]));
     const wanted = new Set(visible[level]);
     for (const [id, slot] of existing) if (!wanted.has(id)) slot.remove();
-    visible[level].forEach((id, index) => {
+    displayOrder[level].forEach((id, index) => {
       const slot = existing.get(id) ?? makeBlock(level, id);
       // Do not detach unchanged cards: preserve focus, double clicks and tooltips.
       if (list.children[index] !== slot) list.insertBefore(slot, list.children[index] ?? null);
@@ -467,7 +464,13 @@ function render() {
   });
   renderSelectionPath(selected);
   scheduleLines();
-  if (summaryTarget && !summaryTarget.button.isConnected) hideSummary();
+  if (summaryTarget) {
+    if (!summaryTarget.button.isConnected) hideSummary();
+    else {
+      cancelAnimationFrame(summaryFrame);
+      summaryFrame = requestAnimationFrame(positionSummary);
+    }
+  }
 }
 
 function closeDetail(restoreFocus = false) {
@@ -517,7 +520,7 @@ function openDetail(level, id) {
 function onBlockKey(event, level, id, isDetail = false) {
   if (event.altKey || event.ctrlKey || event.metaKey || !['ArrowUp', 'ArrowDown'].includes(event.key)) return;
   event.preventDefault();
-  const ids = state.visible[level];
+  const ids = state.displayOrder[level];
   const nextIndex = ids.indexOf(id) + (event.key === 'ArrowUp' ? -1 : 1);
   if (nextIndex < 0 || nextIndex >= ids.length) return;
   const button = isDetail ? detailButton(ids[nextIndex]) : blockButton(ids[nextIndex]);

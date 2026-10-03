@@ -7,6 +7,14 @@ export function createBoardState(catalog) {
   const sourceDesigns = Object.fromEntries(catalog.sources.map(item => [item.id, item.designs ?? []]));
   const designTechnologies = Object.fromEntries(catalog.designs.map(item => [item.id, item.technologies ?? []]));
   const selected = [null, null, null];
+  let displayOrders = levels.map(ids => [...ids]);
+
+  function retainOrder(order, visible) {
+    const allowed = new Set(visible);
+    const retained = order.filter(id => allowed.has(id));
+    const included = new Set(retained);
+    return [...retained, ...visible.filter(id => !included.has(id))];
+  }
 
   function assertLevel(level) {
     if (!Number.isInteger(level) || level < 0 || level >= levels.length) {
@@ -52,6 +60,8 @@ export function createBoardState(catalog) {
 
     const related = visible.map((ids, level) => ids.filter(id => path[level].has(id)));
     const dimmed = visible.map((ids, level) => focusLevel < 0 ? [] : ids.filter(id => !path[level].has(id)));
+    // Only fixed clicks update these orders; hover never moves existing cards.
+    const displayOrder = visible.map((ids, level) => retainOrder(displayOrders[level], ids));
     const edges = [];
     for (const [fromLevel, links] of [[0, sourceDesigns], [1, designTechnologies]]) {
       const toLevel = fromLevel + 1;
@@ -73,6 +83,7 @@ export function createBoardState(catalog) {
     return {
       selected: [...selected],
       visible,
+      displayOrder,
       related,
       dimmed,
       edges,
@@ -108,6 +119,9 @@ export function createBoardState(catalog) {
     get visible() {
       return snapshot().visible;
     },
+    get displayOrder() {
+      return snapshot().displayOrder;
+    },
     get related() {
       return snapshot().related;
     },
@@ -119,6 +133,16 @@ export function createBoardState(catalog) {
     },
     snapshot,
     preview,
+    captureSelection() {
+      return { selected: [...selected], displayOrders: displayOrders.map(ids => [...ids]) };
+    },
+    restoreSelection(checkpoint) {
+      checkpoint.selected.forEach((id, level) => {
+        selected[level] = id;
+      });
+      displayOrders = checkpoint.displayOrders.map(ids => [...ids]);
+      return snapshot();
+    },
     select(level, id) {
       assertVisibleItem(level, id);
       selected[level] = selected[level] === id ? null : id;
@@ -128,10 +152,19 @@ export function createBoardState(catalog) {
       if (level === 2 && selected[2] !== null && selected[1] !== null && !designTechnologies[selected[1]].includes(selected[2])) {
         selected[1] = null;
       }
+      const next = snapshot();
+      // Reorder only columns to the right, keeping both clicks of a double click
+      // over the same button. A concept click preserves its current grouping.
+      for (let downstream = level + 1; downstream < levels.length; downstream += 1) {
+        displayOrders[downstream] = next.focus
+          ? [...next.related[downstream], ...next.dimmed[downstream]]
+          : [...next.visible[downstream]];
+      }
       return snapshot();
     },
     clearSelection() {
       selected.fill(null);
+      displayOrders = levels.map(ids => [...ids]);
       return snapshot();
     },
   };
