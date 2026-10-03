@@ -24,29 +24,29 @@ export function createBoardState(catalog) {
     }
   }
 
-  function snapshot() {
+  function createSnapshot(visualSelection, previewTarget = null) {
     const visible = levels.map((ids) => [...ids]);
 
-    if (selected[0] !== null) {
-      const designs = collectForward(sourceDesigns, [selected[0]]);
+    if (visualSelection[0] !== null) {
+      const designs = collectForward(sourceDesigns, [visualSelection[0]]);
       visible[1] = levels[1].filter((id) => designs.has(id));
       const technologies = collectForward(designTechnologies, visible[1]);
       visible[2] = levels[2].filter((id) => technologies.has(id));
     }
 
-    const focusLevel = selected[2] !== null ? 2 : selected[1] !== null ? 1 : selected[0] !== null ? 0 : -1;
+    const focusLevel = visualSelection[2] !== null ? 2 : visualSelection[1] !== null ? 1 : visualSelection[0] !== null ? 0 : -1;
     const path = [new Set(), new Set(), new Set()];
     if (focusLevel === 0) {
-      path[0].add(selected[0]);
+      path[0].add(visualSelection[0]);
       path[1] = new Set(visible[1]);
       path[2] = new Set(visible[2]);
     } else if (focusLevel === 1) {
-      path[1].add(selected[1]);
-      path[2] = collectForward(designTechnologies, [selected[1]]);
-      path[0] = new Set(visible[0].filter(id => sourceDesigns[id].includes(selected[1])));
+      path[1].add(visualSelection[1]);
+      path[2] = collectForward(designTechnologies, [visualSelection[1]]);
+      path[0] = new Set(visible[0].filter(id => sourceDesigns[id].includes(visualSelection[1])));
     } else if (focusLevel === 2) {
-      path[2].add(selected[2]);
-      path[1] = new Set(visible[1].filter(id => designTechnologies[id].includes(selected[2])));
+      path[2].add(visualSelection[2]);
+      path[1] = new Set(visible[1].filter(id => designTechnologies[id].includes(visualSelection[2])));
       path[0] = new Set(visible[0].filter(id => sourceDesigns[id].some(design => path[1].has(design))));
     }
 
@@ -76,7 +76,26 @@ export function createBoardState(catalog) {
       related,
       dimmed,
       edges,
+      focus: focusLevel < 0 ? null : { level: focusLevel, id: visualSelection[focusLevel] },
+      previewTarget: previewTarget ? { ...previewTarget } : null,
     };
+  }
+
+  function snapshot() {
+    return createSnapshot(selected);
+  }
+
+  function preview(level, id) {
+    assertVisibleItem(level, id);
+    const visualSelection = [...selected];
+    visualSelection[level] = id;
+    for (let downstream = level + 1; downstream < visualSelection.length; downstream += 1) {
+      visualSelection[downstream] = null;
+    }
+    if (level === 2 && visualSelection[1] !== null && !designTechnologies[visualSelection[1]].includes(id)) {
+      visualSelection[1] = null;
+    }
+    return createSnapshot(visualSelection, { level, id });
   }
 
   return {
@@ -99,6 +118,7 @@ export function createBoardState(catalog) {
       return snapshot().edges;
     },
     snapshot,
+    preview,
     select(level, id) {
       assertVisibleItem(level, id);
       selected[level] = selected[level] === id ? null : id;

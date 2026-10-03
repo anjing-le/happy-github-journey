@@ -11,13 +11,16 @@
   </head>
   <body>
     <main class="workspace" aria-label="三层学习资料">
-      <nav class="level-switch" aria-label="切换层级">
-        <button type="button" data-jump="0" aria-label="项目与文章" aria-current="true">项目与文章</button>
-        <span aria-hidden="true"></span>
-        <button type="button" data-jump="1" aria-label="关键设计">关键设计</button>
-        <span aria-hidden="true"></span>
-        <button type="button" data-jump="2" aria-label="技术与原理">技术与原理</button>
-      </nav>
+      <div class="mobile-context">
+        <nav class="level-switch" aria-label="切换层级">
+          <button type="button" data-jump="0" aria-label="项目与文章" aria-current="true">项目与文章</button>
+          <span aria-hidden="true"></span>
+          <button type="button" data-jump="1" aria-label="关键设计">关键设计</button>
+          <span aria-hidden="true"></span>
+          <button type="button" data-jump="2" aria-label="技术与原理">技术与原理</button>
+        </nav>
+        <nav class="selection-path" aria-label="当前学习路径" hidden></nav>
+      </div>
       <div class="board">
         <section class="column" data-level="0" aria-label="项目与文章">
           <h2 class="column-label">项目与文章</h2>

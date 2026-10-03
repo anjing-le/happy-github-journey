@@ -11,6 +11,11 @@ const closeButton = document.querySelector('.close-detail');
 const sourceLink = document.querySelector('.source-link');
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const mobileLayout = matchMedia('(max-width: 720px)');
+const hoverPreview = matchMedia('(hover: hover) and (pointer: fine)');
+const selectionPath = document.querySelector('.selection-path');
+let previewTarget = null;
+let viewSnapshot = state.snapshot();
+let pathSelection = '';
 let detailTarget = null;
 let activeLevel = 0;
 let boardWidth = board.clientWidth;
@@ -129,6 +134,53 @@ function detailButton(id) {
   return document.querySelector(`.block[data-id="${CSS.escape(id)}"] .detail-button`);
 }
 
+function clearPreview() {
+  if (!previewTarget) return;
+  previewTarget = null;
+  render();
+}
+
+function previewBlock(event, level, id) {
+  if (!hoverPreview.matches || mobileLayout.matches || event.pointerType !== 'mouse' || detail.open) return;
+  if (!state.visible[level].includes(id)) return;
+  previewTarget = { level, id };
+  render();
+}
+
+function renderSelectionPath(selected) {
+  const signature = JSON.stringify(selected);
+  if (signature === pathSelection) return;
+  pathSelection = signature;
+  selectionPath.replaceChildren();
+  let previousLevel = null;
+  selected.forEach((id, level) => {
+    if (!id) return;
+    if (previousLevel !== null) {
+      const separator = document.createElement('span');
+      separator.className = 'path-separator';
+      separator.textContent = level === previousLevel + 1 ? '›' : '···';
+      separator.setAttribute('aria-hidden', 'true');
+      selectionPath.append(separator);
+    }
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'path-step';
+    button.dataset.level = level;
+    button.textContent = itemFor(id).title;
+    button.title = itemFor(id).title;
+    button.setAttribute('aria-label', `返回${columns[level].getAttribute('aria-label')}：${itemFor(id).title}`);
+    button.setAttribute('aria-current', level === activeLevel ? 'step' : 'false');
+    button.addEventListener('click', () => {
+      closeDetail();
+      scrollToLevel(level, 'instant');
+      blockButton(id)?.focus({ preventScroll: true });
+    });
+    selectionPath.append(button);
+    previousLevel = level;
+  });
+  selectionPath.hidden = !selected.some(Boolean);
+}
+
 const svgNamespace = 'http://www.w3.org/2000/svg';
 const relationLines = document.createElementNS(svgNamespace, 'svg');
 relationLines.classList.add('relation-lines');
@@ -143,10 +195,10 @@ function scheduleLines() {
 
 function drawLines() {
   relationLines.replaceChildren();
-  if (mobileLayout.matches || !state.selected.some(Boolean)) return;
+  if (mobileLayout.matches || !viewSnapshot.focus) return;
   const boardRect = board.getBoundingClientRect();
   relationLines.setAttribute('viewBox', `0 0 ${boardRect.width} ${boardRect.height}`);
-  for (const edge of state.snapshot().edges) {
+  for (const edge of viewSnapshot.edges) {
     const from = blockButton(edge.fromId)?.closest('.block');
     const to = blockButton(edge.toId)?.closest('.block');
     if (!from || !to) continue;
@@ -212,7 +264,7 @@ function makeBlock(level, id) {
   select.className = 'block-open';
   select.setAttribute('aria-label', `查看 ${item.title} 的关系；双击查看详情`);
   select.setAttribute('aria-keyshortcuts', 'F2');
-  select.title = '单击看关系，双击看详情';
+  select.title = '悬停预览关系，单击选择，双击看详情';
   const dot = document.createElement('span');
   dot.className = 'block-dot';
   dot.setAttribute('aria-hidden', 'true');
@@ -220,6 +272,10 @@ function makeBlock(level, id) {
   title.className = 'block-title';
   title.textContent = item.title;
   select.append(dot, title);
+  block.addEventListener('pointerenter', event => previewBlock(event, level, id));
+  block.addEventListener('pointerleave', () => {
+    if (previewTarget?.id === id) clearPreview();
+  });
   // Defer pointer clicks briefly so double click opens without toggling selection.
   // Keep the same DOM button so its second click can emit dblclick.
   let clickTimer = null;
@@ -304,7 +360,8 @@ function makeBlock(level, id) {
 }
 
 function render() {
-  const { visible, related, selected, dimmed } = state.snapshot();
+  viewSnapshot = previewTarget ? state.preview(previewTarget.level, previewTarget.id) : state.snapshot();
+  const { visible, related, selected, dimmed } = viewSnapshot;
   columns.forEach((column, level) => {
     const list = column.querySelector('.slots');
     const existing = new Map([...list.children].map(slot => [slot.firstElementChild.dataset.id, slot]));
@@ -319,10 +376,12 @@ function render() {
       block.classList.toggle('is-active', isActive);
       block.classList.toggle('is-related', related[level].includes(id));
       block.classList.toggle('is-dimmed', dimmed[level].includes(id));
+      block.classList.toggle('is-preview', previewTarget?.id === id && !isActive);
       block.querySelector('.block-open').setAttribute('aria-pressed', String(isActive));
     });
     switches[level].classList.toggle('has-related', related[level].length > 0);
   });
+  renderSelectionPath(selected);
   scheduleLines();
 }
 
@@ -335,6 +394,9 @@ function closeDetail(restoreFocus = false) {
 }
 
 function selectBlock(level, id) {
+  previewTarget = null;
+  // A transient source preview can contain cards outside the fixed scope.
+  if (!state.visible[level].includes(id)) { render(); return; }
   const { selected, visible } = state.select(level, id);
   render();
   blockButton(id)?.focus({ preventScroll: true });
@@ -345,6 +407,7 @@ function selectBlock(level, id) {
 }
 
 function openDetail(level, id) {
+  clearPreview();
   const item = itemFor(id);
   detailTarget = id;
   detail.dataset.level = String(level);
@@ -389,6 +452,9 @@ detail.addEventListener('click', event => {
 function markLevel(level) {
   activeLevel = level;
   switches.forEach((button, index) => button.setAttribute('aria-current', String(index === level)));
+  selectionPath.querySelectorAll('.path-step').forEach(button => {
+    button.setAttribute('aria-current', Number(button.dataset.level) === level ? 'step' : 'false');
+  });
 }
 
 function scrollToLevel(level, behavior = reducedMotion.matches ? 'instant' : 'smooth') {
@@ -417,12 +483,16 @@ board.addEventListener('focusin', event => {
   if (mobileLayout.matches && column) scrollToLevel(Number(column.dataset.level), 'instant');
 });
 window.addEventListener('resize', () => {
+  if (mobileLayout.matches) clearPreview();
   if (board.clientWidth === boardWidth) return;
   boardWidth = board.clientWidth;
   const level = activeLevel;
   requestAnimationFrame(() => scrollToLevel(level, 'instant'));
   scheduleLines();
 });
+window.addEventListener('blur', clearPreview);
+document.addEventListener('keydown', clearPreview, { capture: true });
+hoverPreview.addEventListener('change', () => { if (!hoverPreview.matches) clearPreview(); });
 render();
 
 new ResizeObserver(scheduleLines).observe(board);
