@@ -4,6 +4,7 @@ export { catalog };
 
 const items = new Map([
   ...catalog.sources,
+  ...(catalog.practices ?? []),
   ...catalog.designs,
   ...catalog.technologies,
 ].map(item => [item.id, item]));

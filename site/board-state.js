@@ -29,26 +29,32 @@ function copySnapshot(value) {
 }
 
 export function createBoardState(catalog) {
-  const levels = [catalog.sources, catalog.designs, catalog.technologies].map(items => items.map(item => item.id));
-  const sourceDesigns = Object.fromEntries(catalog.sources.map(item => [item.id, [...new Set(item.designs ?? [])]]));
+  const practices = catalog.practices ?? [];
+  const origins = [...catalog.sources, ...practices];
+  const levels = [origins, catalog.designs, catalog.technologies].map(items => items.map(item => item.id));
+  const sourceDesigns = Object.fromEntries(origins.map(item => [item.id, [...new Set(item.designs ?? [])]]));
   const designTechnologies = Object.fromEntries(catalog.designs.map(item => [item.id, [...new Set(item.technologies ?? [])]]));
   const designSources = reverseLinks(sourceDesigns, levels[1]);
   const technologyDesigns = reverseLinks(designTechnologies, levels[2]);
-  const sourceTechnologies = Object.fromEntries(catalog.sources.map(item => [item.id, [...collectForward(designTechnologies, sourceDesigns[item.id])]]));
+  const directTechnologies = Object.fromEntries(practices.map(item => [item.id, item.technologies ?? []]));
+  const sourceTechnologies = Object.fromEntries(origins.map(item => [item.id, [...new Set([
+    ...collectForward(designTechnologies, sourceDesigns[item.id]), ...(directTechnologies[item.id] ?? []),
+  ])]]));
   const titles = new Map([...catalog.designs, ...catalog.technologies].map(item => [item.id, item.title]));
-  const searchText = new Map(catalog.sources.map(item => [item.id, [
+  const searchText = new Map(origins.map(item => [item.id, [
     item.title,
     item.summary,
     ...(item.preview ?? []).map(row => row.text),
     ...sourceDesigns[item.id].map(id => titles.get(id)),
     ...sourceTechnologies[item.id].map(id => titles.get(id)),
   ].filter(Boolean).join(' ').toLowerCase()]));
-  const relationEdges = [[0, sourceDesigns], [1, designTechnologies]].flatMap(([fromLevel, links]) =>
-    Object.entries(links).flatMap(([fromId, destinations]) => destinations.map(toId => ({ fromLevel, fromId, toLevel: fromLevel + 1, toId }))));
+  const relationEdges = [[0, sourceDesigns, 1], [1, designTechnologies, 2], [0, directTechnologies, 2]].flatMap(([fromLevel, links, toLevel]) =>
+    Object.entries(links).flatMap(([fromId, destinations]) => destinations.map(toId => ({ fromLevel, fromId, toLevel, toId }))));
   const selected = [null, null, null];
   let displayOrders = copyLevels(levels);
   let filters = { query: '', type: '', status: '' };
-  let filteredVisible = copyLevels(levels);
+  let mode = 'sources';
+  let filteredVisible = [catalog.sources.map(item => item.id), [...levels[1]], [...levels[2]]];
   let cachedSnapshot = null;
 
   function retainOrder(order, visible) {
@@ -76,6 +82,8 @@ export function createBoardState(catalog) {
 
   function visibleFor(visualSelection) {
     const visible = copyLevels(filteredVisible);
+    // A hover is not a committed choice: the lower layers stay empty until clicked.
+    if (selected[0] === null) return [visible[0], [], []];
     if (visualSelection[0] !== null) {
       const designs = collectForward(sourceDesigns, [visualSelection[0]]);
       visible[1] = visible[1].filter((id) => designs.has(id));
@@ -102,6 +110,9 @@ export function createBoardState(catalog) {
       const availableDesigns = new Set(visible[1]);
       path[1] = new Set(technologyDesigns[visualSelection[2]].filter(id => availableDesigns.has(id)));
       path[0] = collectForward(designSources, [...path[1]]);
+      for (const [id, technologies] of Object.entries(directTechnologies)) {
+        if (technologies.includes(visualSelection[2])) path[0].add(id);
+      }
     }
 
     const related = visible.map((ids, level) => ids.filter(id => path[level].has(id)));
@@ -113,6 +124,7 @@ export function createBoardState(catalog) {
       .map(edge => ({ ...edge, highlight: path[edge.fromLevel].has(edge.fromId) && path[edge.toLevel].has(edge.toId) }));
 
     return {
+      mode,
       selected: [...selected],
       visible,
       displayOrder,
@@ -154,19 +166,20 @@ export function createBoardState(catalog) {
     const updated = Object.fromEntries(Object.keys(filters).map(key => [key, key in next ? String(next[key] ?? '').trim() : filters[key]]));
     if (Object.keys(filters).every(key => updated[key] === filters[key])) return snapshot();
     filters = updated;
-    if (!filters.query && !filters.type && !filters.status) filteredVisible = copyLevels(levels);
-    else {
+    updateFilteredVisible();
+    pruneSelection();
+    cachedSnapshot = null;
+    return snapshot();
+  }
+
+  function updateFilteredVisible() {
       const terms = filters.query.toLowerCase().split(/\s+/).filter(Boolean);
-      const sources = catalog.sources.filter(item => (!filters.type || item.type === filters.type)
+      const sources = (mode === 'sources' ? catalog.sources : practices).filter(item => (mode === 'practices' || !filters.type || item.type === filters.type)
         && (!filters.status || item.status === filters.status)
         && terms.every(term => searchText.get(item.id).includes(term))).map(item => item.id);
       const designs = collectForward(sourceDesigns, sources);
       const technologies = collectForward(sourceTechnologies, sources);
       filteredVisible = [sources, levels[1].filter(id => designs.has(id)), levels[2].filter(id => technologies.has(id))];
-    }
-    pruneSelection();
-    cachedSnapshot = null;
-    return snapshot();
   }
 
   function preview(level, id) {
@@ -210,6 +223,17 @@ export function createBoardState(catalog) {
     snapshot,
     preview,
     setSourceFilter,
+    setEntryMode(next) {
+      if (!['sources', 'practices'].includes(next)) throw new RangeError('Unknown entry mode');
+      if (next === mode) return snapshot();
+      mode = next;
+      filters.type = '';
+      selected.fill(null);
+      displayOrders = copyLevels(levels);
+      updateFilteredVisible();
+      cachedSnapshot = null;
+      return snapshot();
+    },
     captureSelection() {
       return { selected: [...selected], displayOrders: displayOrders.map(ids => [...ids]) };
     },

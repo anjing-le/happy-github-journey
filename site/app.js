@@ -19,6 +19,9 @@ const sourceStatus = document.querySelector('#source-status');
 const catalogTools = document.querySelector('.catalog-tools');
 const sourceFilters = document.querySelector('.source-filters');
 const emptyState = document.querySelector('.empty-state');
+const entrySwitches = [...document.querySelectorAll('[data-entry]')];
+const practiceIds = new Set((catalog.practices ?? []).map(item => item.id));
+let selectionEpoch = 0;
 const blockNodes = new Map();
 const copyTimers = new WeakMap();
 let previewTarget = null;
@@ -51,6 +54,7 @@ for (const type of new Set(['article', 'open-source', ...catalog.sources.map(ite
 }
 
 function applySourceFilter() {
+  selectionEpoch += 1;
   clearTimeout(searchTimer);
   hideSummary();
   previewTarget = null;
@@ -59,6 +63,18 @@ function applySourceFilter() {
   render();
   status.textContent = `找到 ${snapshot.visible[0].length} 条素材`;
 }
+
+entrySwitches.forEach(button => button.addEventListener('click', () => {
+  selectionEpoch += 1;
+  hideSummary();
+  previewTarget = null;
+  closeDetail();
+  state.setEntryMode(button.dataset.entry);
+  sourceType.value = '';
+  sourceFilters.open = false;
+  render();
+  scrollToLevel(0, 'instant');
+}));
 
 sourceSearch.addEventListener('input', event => {
   clearTimeout(searchTimer);
@@ -240,6 +256,7 @@ function showSummary(button, level, id, mode) {
   if (!rows.length) return;
   summaryTarget = { button, level, id, mode };
   summaryBubble.dataset.level = String(level);
+  summaryBubble.dataset.kind = practiceIds.has(id) ? 'practice' : '';
   const elements = document.createElement('dl');
   for (const row of rows) {
     const line = document.createElement('div');
@@ -294,6 +311,7 @@ function renderSelectionPath(selected) {
     button.type = 'button';
     button.className = 'path-step';
     button.dataset.level = level;
+    button.dataset.kind = practiceIds.has(id) ? 'practice' : '';
     button.textContent = itemFor(id).title;
     button.title = itemFor(id).title;
     button.setAttribute('aria-label', `返回${columns[level].getAttribute('aria-label')}：${itemFor(id).title}`);
@@ -344,10 +362,16 @@ function drawLines() {
     const y2 = b.top + b.height / 2 - boardRect.top;
     const bend = (x2 - x1) * .5;
     const path = document.createElementNS(svgNamespace, 'path');
-    path.setAttribute('d', `M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`);
+    if (edge.toLevel - edge.fromLevel > 1) {
+      // Route a direct concept reference above the middle column, so it does
+      // not look like a link through an unrelated method card.
+      const top = Math.min(a.top, b.top) - boardRect.top - 12;
+      path.setAttribute('d', `M ${x1} ${y1} C ${x1 + 18} ${y1}, ${x1 + 18} ${top}, ${x1 + 36} ${top} L ${x2 - 36} ${top} C ${x2 - 18} ${top}, ${x2 - 18} ${y2}, ${x2} ${y2}`);
+    } else path.setAttribute('d', `M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`);
     path.classList.add('relation-line');
     path.classList.toggle('is-highlighted', edge.highlight);
     path.dataset.level = String(edge.toLevel);
+    path.dataset.kind = practiceIds.has(edge.fromId) ? 'practice' : '';
     paths.append(path);
   }
   relationLines.append(paths);
@@ -389,7 +413,7 @@ async function copyBlock(level, id, button, tooltip) {
       button.classList.add('is-copied');
       tooltip.textContent = '已复制';
     }
-    status.textContent = `已复制 ${item.title} 的标题、摘要和正文${level === 0 ? '及来源链接' : ''}`;
+    status.textContent = `已复制 ${item.title} 的标题、摘要和正文${level === 0 && sourceUrlFor(id) ? '及来源链接' : ''}`;
     copyTimers.set(button, setTimeout(() => {
       button.classList.remove('is-copied');
       tooltip.textContent = button.dataset.copyHint;
@@ -421,6 +445,7 @@ function makeBlock(level, id) {
   block.className = 'block';
   block.dataset.id = id;
   block.dataset.level = level;
+  block.dataset.kind = practiceIds.has(id) ? 'practice' : '';
   const select = document.createElement('button');
   select.type = 'button';
   select.className = 'block-open';
@@ -450,14 +475,16 @@ function makeBlock(level, id) {
   let clickTimer = null;
   let beforePointerClick = null;
   let clickApplied = false;
+  let pointerEpoch = 0;
   select.addEventListener('click', event => {
     if (event.detail === 0) selectBlock(level, id);
     else if (event.detail === 1) {
       clearTimeout(clickTimer);
       beforePointerClick = state.captureSelection();
+      pointerEpoch = selectionEpoch;
       clickApplied = false;
       clickTimer = setTimeout(() => {
-        if (select.isConnected) {
+        if (select.isConnected && pointerEpoch === selectionEpoch) {
           selectBlock(level, id);
           clickApplied = true;
         }
@@ -467,7 +494,7 @@ function makeBlock(level, id) {
   select.addEventListener('dblclick', () => {
     clearTimeout(clickTimer);
     // A slower system double click may arrive after the single-click delay.
-    if (clickApplied && beforePointerClick) {
+    if (clickApplied && beforePointerClick && pointerEpoch === selectionEpoch) {
       state.restoreSelection(beforePointerClick);
       render();
     }
@@ -498,7 +525,7 @@ function makeBlock(level, id) {
   copy.type = 'button';
   copy.className = 'copy-button';
   copy.setAttribute('aria-label', `复制 ${item.title} 的内容`);
-  copy.dataset.copyHint = `复制标题、摘要和正文${level === 0 ? '及来源链接' : ''}，可粘贴给 AI`;
+  copy.dataset.copyHint = `复制标题、摘要和正文${level === 0 && sourceUrlFor(id) ? '及来源链接' : ''}，可粘贴给 AI`;
   const copyIcon = document.createElementNS(svgNamespace, 'svg');
   copyIcon.setAttribute('viewBox', '0 0 24 24');
   copyIcon.setAttribute('aria-hidden', 'true');
@@ -533,7 +560,22 @@ function makeBlock(level, id) {
 function render() {
   viewSnapshot = previewTarget ? state.preview(previewTarget.level, previewTarget.id) : state.snapshot();
   const { visible, displayOrder, related, selected, dimmed } = viewSnapshot;
+  const isPractice = viewSnapshot.mode === 'practices';
+  const entryTitle = isPractice ? '最佳实践' : '项目与文章';
+  entrySwitches.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.entry === viewSnapshot.mode)));
+  columns[0].dataset.kind = isPractice ? 'practice' : '';
+  columns[0].setAttribute('aria-label', entryTitle);
+  columns[0].querySelector('.column-label').textContent = entryTitle;
+  columns[0].querySelector('.slots').setAttribute('aria-label', `${entryTitle}块列表`);
+  switches[0].textContent = entryTitle;
+  switches[0].setAttribute('aria-label', entryTitle);
+  switches[0].dataset.kind = isPractice ? 'practice' : '';
+  sourceSearch.placeholder = isPractice ? '搜索最佳实践' : '搜索素材';
+  sourceSearch.setAttribute('aria-label', sourceSearch.placeholder);
+  document.querySelector('#source-type-field').hidden = isPractice;
   columns.forEach((column, level) => {
+    column.hidden = level > 0 && !selected[0];
+    switches[level].hidden = column.hidden;
     const list = column.querySelector('.slots');
     const existing = new Map([...list.children].map(slot => [slot.firstElementChild.dataset.id, slot]));
     const wanted = new Set(visible[level]);
@@ -556,8 +598,13 @@ function render() {
     });
     switches[level].classList.toggle('has-related', related[level].length > 0);
   });
+  document.querySelectorAll('.level-switch > span').forEach(span => { span.hidden = !selected[0]; });
+  document.querySelector('.level-switch').hidden = !selected[0];
+  if (!selected[0] && activeLevel !== 0) scrollToLevel(0, 'instant');
   emptyState.hidden = visible[0].length > 0;
-  emptyState.textContent = catalog.sources.length ? '没有匹配素材' : '暂无素材';
+  emptyState.textContent = isPractice
+    ? ((catalog.practices ?? []).length ? '没有匹配最佳实践' : '暂无最佳实践')
+    : (catalog.sources.length ? '没有匹配素材' : '暂无素材');
   renderSelectionPath(selected);
   scheduleLines();
   if (summaryTarget) {
@@ -587,7 +634,7 @@ function selectBlock(level, id) {
   blockButton(id)?.focus({ preventScroll: true });
   const counts = visible.map((ids, index) => `${columns[index].getAttribute('aria-label')} ${ids.length} 个块`).join('，');
   const relatedCount = related[2].length;
-  const relationHint = selected.some(Boolean) ? `突出 ${relatedCount} 个关联技术，其余淡化` : '显示全部卡片';
+  const relationHint = selected.some(Boolean) ? `突出 ${relatedCount} 个关联技术，其余淡化` : '已收起关键设计和技术与原理';
   status.textContent = `${selected[level] === id ? '已选中' : '已取消选择'}，${counts}；${relationHint}`;
 }
 
@@ -597,6 +644,7 @@ function openDetail(level, id) {
   const item = itemFor(id);
   detailTarget = id;
   detail.dataset.level = String(level);
+  detail.dataset.kind = practiceIds.has(id) ? 'practice' : '';
   detail.querySelector('.detail-title').textContent = item.title;
   const metadata = [typeLabels[item.type] ?? item.type, statusLabel(item), ...archiveLabels(item), item.receivedAt ? `收录于 ${item.receivedAt}` : ''].filter(Boolean);
   detail.querySelector('.detail-meta').textContent = metadata.join(' · ');
@@ -678,6 +726,7 @@ function markLevel(level) {
 }
 
 function scrollToLevel(level, behavior = reducedMotion.matches ? 'instant' : 'smooth') {
+  if (columns[level].hidden) return;
   markLevel(level);
   board.scrollTo({ left: mobileLayout.matches ? columns[level].offsetLeft - columns[0].offsetLeft : 0, behavior });
 }
@@ -692,6 +741,7 @@ board.addEventListener('scroll', () => {
   let nearest = 0;
   let distance = Infinity;
   columns.forEach((column, index) => {
+    if (column.hidden) return;
     const rect = column.getBoundingClientRect();
     const current = Math.abs(rect.left + rect.width / 2 - center);
     if (current < distance) { distance = current; nearest = index; }
@@ -717,6 +767,16 @@ window.addEventListener('resize', () => {
 window.addEventListener('blur', () => { hideSummary(); clearPreview(); });
 document.addEventListener('scroll', hideSummary, { capture: true, passive: true });
 document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && !detail.open) {
+    const origin = state.selected[0];
+    const returnToOrigin = event.target.closest?.('.column, .level-switch, .selection-path');
+    selectionEpoch += 1;
+    previewTarget = null;
+    state.clearSelection();
+    render();
+    if (origin && returnToOrigin) blockButton(origin)?.focus({ preventScroll: true });
+    status.textContent = '已取消选择';
+  }
   if (event.key === 'Escape' && sourceFilters.open) {
     sourceFilters.open = false;
     if (sourceFilters.contains(document.activeElement)) sourceFilters.querySelector('summary').focus();

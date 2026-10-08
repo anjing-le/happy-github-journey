@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { readFile, readdir } from 'node:fs/promises';
+import { readFile, readdir, mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import test from 'node:test';
@@ -11,6 +12,29 @@ const completeCatalog = await loadCatalog(root);
 const catalog = JSON.parse(await readFile(join(root, 'dist/catalog.json'), 'utf8'));
 const entries = Object.values(catalog).flat();
 let moduleNumber = 0;
+
+test('practices can reuse shared knowledge without external URLs or dangling references', async () => {
+  const fixture = await mkdtemp(join(tmpdir(), 'journey-catalog-'));
+  const write = async (group, metadata) => {
+    await mkdir(join(fixture, 'content', group), { recursive: true });
+    await writeFile(join(fixture, 'content', group, `${metadata.id}.md`), `---\n${JSON.stringify(metadata)}\n---\nTest only\n`);
+  };
+  const practice = { id: 'practice', title: 'Test practice', status: 'draft', designs: ['design'], technologies: ['direct'] };
+  try {
+    await write('practices', practice);
+    await write('designs', { id: 'design', title: 'Shared design', status: 'draft', technologies: ['derived'] });
+    await write('technologies', { id: 'derived', title: 'Derived concept', status: 'draft' });
+    await write('technologies', { id: 'direct', title: 'Direct concept', status: 'draft' });
+    const result = await loadCatalog(fixture);
+    assert.equal(result.sources.length, 0);
+    assert.deepEqual(result.designs[0].practices, ['practice']);
+    assert(result.technologies.every(item => item.practices.includes('practice')));
+    await write('practices', { ...practice, technologies: ['missing'] });
+    await assert.rejects(loadCatalog(fixture), /missing technologies ID/);
+    await write('practices', { ...practice, url: 'https://example.com' });
+    await assert.rejects(loadCatalog(fixture), /only sources/);
+  } finally { await rm(fixture, { recursive: true, force: true }); }
+});
 
 function freshContent() {
   const url = pathToFileURL(join(root, 'dist/content.js'));

@@ -12,6 +12,10 @@
   <body>
     <main class="workspace" aria-label="三层学习资料">
       <div class="mobile-context">
+        <nav class="entry-switch" aria-label="切换知识入口">
+          <button type="button" data-entry="sources" aria-pressed="true">项目与文章</button>
+          <button type="button" data-entry="practices" aria-pressed="false">最佳实践</button>
+        </nav>
         <form class="catalog-tools" role="search" aria-label="查找素材">
           <label class="search-field">
             <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m13 13 4 4"/></svg>
@@ -23,18 +27,18 @@
               <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14"/><circle cx="7" cy="5" r="2"/><circle cx="13" cy="10" r="2"/><circle cx="8" cy="15" r="2"/></svg>
             </summary>
             <div class="filter-panel">
-              <label>来源类型<select id="source-type"><option value="">全部类型</option></select></label>
+              <label id="source-type-field">来源类型<select id="source-type"><option value="">全部类型</option></select></label>
               <label>解析状态<select id="source-status"><option value="">全部状态</option><option value="pending">待解析</option><option value="draft">待校准</option><option value="reviewed">已认可</option></select></label>
               <button type="reset" class="reset-filters">重置筛选</button>
             </div>
           </details>
         </form>
-        <nav class="level-switch" aria-label="切换层级">
+        <nav class="level-switch" aria-label="切换层级" hidden>
           <button type="button" data-jump="0" aria-label="项目与文章" aria-current="true">项目与文章</button>
-          <span aria-hidden="true"></span>
-          <button type="button" data-jump="1" aria-label="关键设计">关键设计</button>
-          <span aria-hidden="true"></span>
-          <button type="button" data-jump="2" aria-label="技术与原理">技术与原理</button>
+          <span aria-hidden="true" hidden></span>
+          <button type="button" data-jump="1" aria-label="关键设计" hidden>关键设计</button>
+          <span aria-hidden="true" hidden></span>
+          <button type="button" data-jump="2" aria-label="技术与原理" hidden>技术与原理</button>
         </nav>
         <nav class="selection-path" aria-label="当前学习路径" hidden></nav>
       </div>
@@ -44,11 +48,11 @@
           <ol class="slots" id="source-list" aria-label="项目与文章块列表"></ol>
           <p class="empty-state" hidden>没有匹配素材</p>
         </section>
-        <section class="column" data-level="1" aria-label="关键设计">
+        <section class="column" data-level="1" aria-label="关键设计" hidden>
           <h2 class="column-label">关键设计</h2>
           <ol class="slots" aria-label="关键设计块列表"></ol>
         </section>
-        <section class="column" data-level="2" aria-label="技术与原理">
+        <section class="column" data-level="2" aria-label="技术与原理" hidden>
           <h2 class="column-label">技术与原理</h2>
           <ol class="slots" aria-label="技术与原理块列表"></ol>
         </section>

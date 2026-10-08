@@ -1,6 +1,6 @@
 # 内容格式
 
-`content/` 中的 Markdown 是唯一内容来源；`dist/catalog.js` 和 `dist/catalog.json` 由构建生成，不能手改。每个条目一个 Markdown 文件，文件平铺在 `sources/`、`designs/` 或 `technologies/` 下。新目录在有实际条目时创建。
+`content/` 中的 Markdown 是唯一内容来源；`dist/catalog.js` 和 `dist/catalog.json` 由构建生成，不能手改。每个条目一个 Markdown 文件，文件平铺在 `sources/`、`practices/`、`designs/` 或 `technologies/` 下。新目录在有实际条目时创建。
 
 文件以 `---` 包住一个 JSON 对象作为前置信息（合法 YAML flow mapping），后面是 Markdown 正文。JSON 确保零依赖构建可以可靠读取。共同字段为稳定的 `id`、`title`、`status`，可选 `summary` 为简述，可选 `preview` 为悬停要素。ID 全库唯一，重命名标题时保留 ID；文件名按收录顺序排序。
 
@@ -92,7 +92,15 @@
 
 第三层一张卡解释一个独立有意义的基础概念；HTML 与 CSS 等不同概念分卡，不把多种机制或一条技术链路打包成卡。正文按理解需要补充原理，不无限递归无关依赖。二、三层不填写独立外部 URL。
 
-关联只维护两处：第一层 `designs` 引用第二层 ID，第二层 `technologies` 引用第三层 ID。反向的 `sources`、`designs` 由构建生成，勿手写；共享条目允许被多个来源或设计引用。设计必须有来源，技术必须被设计引用，不能出现悬空 ID 或同名不同义的随意合并。
+素材的第一层 `designs` 引用第二层 ID，第二层 `technologies` 引用第三层 ID。最佳实践也可引用这些共享条目。反向的 `sources`、`practices`、`designs` 由构建生成，勿手写；设计必须被来源或最佳实践引用，技术必须被设计或最佳实践引用，不能出现悬空 ID 或同名不同义的随意合并。
+
+## 顶层输出：practices
+
+最佳实践与项目/文章是两个顶层入口，共用已有设计和技术。当前只准备入口，不填虚构文章。用户明确要求创作时，围绕具体场景、问题与目标组织方案，保留条件、取舍及有依据的验证结果；初稿仍为 `draft`。
+
+最佳实践使用共同字段 `id`、`title`、`status`、`summary`、`preview` 和 Markdown 正文，另有两个必要数组：`designs` 引用已有设计 ID；`technologies` 直接引用已有概念 ID。数组可以为空，不能引用不存在的 ID。页面第三层展示所选设计的技术与直接技术的并集，复用原卡，不复制内容。反向 `practices` 由构建生成。
+
+最佳实践不定义素材 `url` 或 `archive`，来源通过共享知识关系追溯；只有项目与文章显示外部来源按钮。点击、详情与复制沿用现有交互，最佳实践采用金色。
 
 ## 内部证据笔记
 

@@ -76,13 +76,17 @@ function validateEntry(item, group, file) {
     }
   } else {
     if (Object.hasOwn(item, 'url')) fail(file, 'only sources may define an external url');
-    if (group === 'designs') {
-      if (Object.hasOwn(item, 'sources')) {
-        fail(file, 'sources is generated from source.designs; remove it from design frontmatter');
+    if (group === 'practices') {
+      references(item, 'designs', file);
+      references(item, 'technologies', file);
+      if (Object.hasOwn(item, 'archive')) fail(file, 'only sources may define an archive');
+    } else if (group === 'designs') {
+      if (Object.hasOwn(item, 'sources') || Object.hasOwn(item, 'practices')) {
+        fail(file, 'sources and practices are generated; remove them from design frontmatter');
       }
       references(item, 'technologies', file);
     } else {
-      for (const key of ['designs', 'sources']) {
+      for (const key of ['designs', 'sources', 'practices']) {
         if (Object.hasOwn(item, key)) {
           fail(file, `${key} is generated from design.technologies and source.designs; remove it from technology frontmatter`);
         }
@@ -177,7 +181,7 @@ async function readEntries(root, group, verifyArchives) {
 }
 
 export async function loadCatalog(root, { verifyArchives = false } = {}) {
-  const groups = ['sources', 'designs', 'technologies'];
+  const groups = ['sources', 'practices', 'designs', 'technologies'];
   const records = {};
   for (const group of groups) records[group] = await readEntries(root, group, verifyArchives);
 
@@ -202,6 +206,10 @@ export async function loadCatalog(root, { verifyArchives = false } = {}) {
     }
   }
   for (const record of records.sources) checkReferences(record, 'designs', 'designs');
+  for (const record of records.practices) {
+    checkReferences(record, 'designs', 'designs');
+    checkReferences(record, 'technologies', 'technologies');
+  }
   for (const record of records.designs) checkReferences(record, 'technologies', 'technologies');
 
   // Store each relationship once in Markdown, then derive reverse provenance.
@@ -209,8 +217,11 @@ export async function loadCatalog(root, { verifyArchives = false } = {}) {
     record.item.sources = records.sources
       .filter(source => source.item.designs.includes(record.item.id))
       .map(source => source.item.id);
-    if (!record.item.sources.length) {
-      fail(record.file, 'design has no source; reference its ID from a source.designs array');
+    record.item.practices = records.practices
+      .filter(practice => practice.item.designs.includes(record.item.id))
+      .map(practice => practice.item.id);
+    if (!record.item.sources.length && !record.item.practices.length) {
+      fail(record.file, 'design has no origin; reference its ID from sources or practices');
     }
   }
   for (const record of records.technologies) {
@@ -220,8 +231,12 @@ export async function loadCatalog(root, { verifyArchives = false } = {}) {
     const sourceIds = new Set(designs.flatMap(design => design.item.sources));
     record.item.sources = records.sources
       .filter(source => sourceIds.has(source.item.id)).map(source => source.item.id);
-    if (!record.item.designs.length) {
-      fail(record.file, 'technology has no design; reference its ID from a design.technologies array');
+    record.item.practices = records.practices
+      .filter(practice => practice.item.technologies.includes(record.item.id)
+        || practice.item.designs.some(id => record.item.designs.includes(id)))
+      .map(practice => practice.item.id);
+    if (!record.item.designs.length && !record.item.practices.length) {
+      fail(record.file, 'technology has no origin; reference its ID from designs or practices');
     }
   }
   return Object.fromEntries(groups.map(group => [
