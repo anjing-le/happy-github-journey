@@ -36,6 +36,45 @@ test('practices can reuse shared knowledge without external URLs or dangling ref
   } finally { await rm(fixture, { recursive: true, force: true }); }
 });
 
+test('sources optionally link concepts directly, with derived provenance deduplicated', async () => {
+  const fixture = await mkdtemp(join(tmpdir(), 'journey-source-catalog-'));
+  const write = async (group, metadata) => {
+    await mkdir(join(fixture, 'content', group), { recursive: true });
+    await writeFile(join(fixture, 'content', group, `${metadata.id}.md`), `---\n${JSON.stringify(metadata)}\n---\nTest only\n`);
+  };
+  const source = { id: 'source', title: 'Test source', type: 'article', status: 'draft', url: 'https://example.com/article', receivedAt: '2026-10-12', designs: ['design'], technologies: ['shared', 'direct'] };
+  try {
+    await write('sources', source);
+    await write('sources', { ...source, id: 'legacy', technologies: undefined });
+    await write('designs', { id: 'design', title: 'Shared design', status: 'draft', technologies: ['shared'] });
+    await write('technologies', { id: 'shared', title: 'Shared concept', status: 'draft' });
+    await write('technologies', { id: 'direct', title: 'Direct concept', status: 'draft' });
+    const result = await loadCatalog(fixture);
+    assert.deepEqual(result.sources.find(item => item.id === 'legacy').technologies, []);
+    const shared = result.technologies.find(item => item.id === 'shared');
+    assert.deepEqual(shared.sources, ['legacy', 'source']);
+    assert.deepEqual(shared.designs, ['design']);
+    const direct = result.technologies.find(item => item.id === 'direct');
+    assert.deepEqual(direct.sources, ['source']);
+    assert.deepEqual(direct.designs, []);
+    assert.deepEqual(direct.practices, []);
+
+    await write('sources', { ...source, technologies: ['missing'] });
+    await assert.rejects(loadCatalog(fixture), /technologies references missing technologies ID "missing"/);
+    for (const technologies of [null, 'direct', ['direct', 'direct']]) {
+      await write('sources', { ...source, technologies });
+      await assert.rejects(loadCatalog(fixture), /technologies must be an array|technologies contains duplicate IDs/);
+    }
+    for (const relationships of [
+      { designs: ['design'], technologies: [] },
+      { designs: [], technologies: ['direct'] },
+    ]) {
+      await write('sources', { ...source, status: 'pending', ...relationships });
+      await assert.rejects(loadCatalog(fixture), /pending sources must have empty designs and technologies arrays/);
+    }
+  } finally { await rm(fixture, { recursive: true, force: true }); }
+});
+
 function freshContent() {
   const url = pathToFileURL(join(root, 'dist/content.js'));
   url.searchParams.set('contract-test', String(++moduleNumber));

@@ -634,7 +634,7 @@ function selectBlock(level, id) {
   blockButton(id)?.focus({ preventScroll: true });
   const counts = visible.map((ids, index) => `${columns[index].getAttribute('aria-label')} ${ids.length} 个块`).join('，');
   const relatedCount = related[2].length;
-  const relationHint = selected.some(Boolean) ? `突出 ${relatedCount} 个关联技术，其余淡化` : '已收起关键设计和技术与原理';
+  const relationHint = selected.some(Boolean) ? `突出 ${relatedCount} 个关联技术，其余淡化` : '已收起设计方法和技术与概念';
   status.textContent = `${selected[level] === id ? '已选中' : '已取消选择'}，${counts}；${relationHint}`;
 }
 

@@ -104,3 +104,33 @@ test('an empty practice entry is an empty catalog view, not placeholder knowledg
   assert.equal(state.edges.length, 0);
   assert.throws(() => state.select(1, 'shared'), /outside/);
 });
+
+test('source concepts can skip the method layer and remain searchable and traceable', () => {
+  const state = createBoardState({
+    ...catalog,
+    sources: [
+      ...catalog.sources,
+      { id: 'direct-source', title: 'Direct source', type: 'article', status: 'draft', designs: [], technologies: ['html'] },
+      { id: 'mixed-source', title: 'Mixed source', type: 'article', status: 'draft', designs: ['shared'], technologies: ['cache', 'html'] },
+    ],
+  });
+  assert.deepEqual(state.setSourceFilter({ query: 'direct html' }).visible, [['direct-source'], [], []]);
+  state.select(0, 'direct-source');
+  assert.deepEqual(state.visible, [['direct-source'], [], ['html']]);
+  assert.deepEqual(state.edges, [{ fromLevel: 0, fromId: 'direct-source', toLevel: 2, toId: 'html', highlight: true }]);
+  state.select(2, 'html');
+  assert.deepEqual(state.related, [['direct-source'], [], ['html']]);
+  state.setSourceFilter({ query: 'mixed html' });
+  assert.deepEqual(state.selected, [null, null, null]);
+  state.select(0, 'mixed-source');
+  assert.deepEqual(state.visible, [['mixed-source'], ['shared'], ['fp32', 'cache', 'html']]);
+  assert.equal(state.edges.filter(edge => edge.fromId === 'mixed-source' && edge.toId === 'cache').length, 1);
+  state.select(1, 'shared');
+  assert.deepEqual(state.related[2], ['fp32', 'cache']);
+  assert.deepEqual(state.dimmed[2], ['html']);
+  assert.equal(state.edges.find(edge => edge.toId === 'html').highlight, false);
+  state.select(2, 'html');
+  assert.deepEqual(state.selected, ['mixed-source', null, 'html']);
+  assert.deepEqual(state.related, [['mixed-source'], [], ['html']]);
+  assert.equal(state.edges.find(edge => edge.toId === 'html').highlight, true);
+});

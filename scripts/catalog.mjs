@@ -71,8 +71,10 @@ function validateEntry(item, group, file) {
     }
     isoDate(item.receivedAt, 'receivedAt', file);
     references(item, 'designs', file);
-    if (item.status === 'pending' && item.designs.length) {
-      fail(file, 'pending sources must have an empty designs array');
+    if (!Object.hasOwn(item, 'technologies')) item.technologies = [];
+    references(item, 'technologies', file);
+    if (item.status === 'pending' && (item.designs.length || item.technologies.length)) {
+      fail(file, 'pending sources must have empty designs and technologies arrays');
     }
   } else {
     if (Object.hasOwn(item, 'url')) fail(file, 'only sources may define an external url');
@@ -88,7 +90,7 @@ function validateEntry(item, group, file) {
     } else {
       for (const key of ['designs', 'sources', 'practices']) {
         if (Object.hasOwn(item, key)) {
-          fail(file, `${key} is generated from design.technologies and source.designs; remove it from technology frontmatter`);
+          fail(file, `${key} is generated from source, practice and design references; remove it from technology frontmatter`);
         }
       }
     }
@@ -205,7 +207,10 @@ export async function loadCatalog(root, { verifyArchives = false } = {}) {
       }
     }
   }
-  for (const record of records.sources) checkReferences(record, 'designs', 'designs');
+  for (const record of records.sources) {
+    checkReferences(record, 'designs', 'designs');
+    checkReferences(record, 'technologies', 'technologies');
+  }
   for (const record of records.practices) {
     checkReferences(record, 'designs', 'designs');
     checkReferences(record, 'technologies', 'technologies');
@@ -230,13 +235,14 @@ export async function loadCatalog(root, { verifyArchives = false } = {}) {
     record.item.designs = designs.map(design => design.item.id);
     const sourceIds = new Set(designs.flatMap(design => design.item.sources));
     record.item.sources = records.sources
-      .filter(source => sourceIds.has(source.item.id)).map(source => source.item.id);
+      .filter(source => sourceIds.has(source.item.id) || source.item.technologies.includes(record.item.id))
+      .map(source => source.item.id);
     record.item.practices = records.practices
       .filter(practice => practice.item.technologies.includes(record.item.id)
         || practice.item.designs.some(id => record.item.designs.includes(id)))
       .map(practice => practice.item.id);
-    if (!record.item.designs.length && !record.item.practices.length) {
-      fail(record.file, 'technology has no origin; reference its ID from designs or practices');
+    if (!record.item.designs.length && !record.item.sources.length && !record.item.practices.length) {
+      fail(record.file, 'technology has no origin; reference its ID from sources, designs or practices');
     }
   }
   return Object.fromEntries(groups.map(group => [

@@ -1,4 +1,4 @@
 interface:
   display_name: "安静の GitHub Journey"
-  short_description: "保留素材与原件，吸收复述知识，提炼可组合方法和单个基础概念"
-  default_prompt: "使用 $anjing-happy-github-journey 收录这份素材和原件，用自己的话吸收复述知识，再提炼可组合的方法和单个基础概念，逐条供我校准。"
+  short_description: "保留素材与原件，理解完整方案，积累值得复用的方法与技术概念"
+  default_prompt: "使用 $anjing-happy-github-journey 收录这份素材和原件，先用自己的话讲清整体方案，再复用或补充有独立价值的方法与技术概念，逐条供我校准。"

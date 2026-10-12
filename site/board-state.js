@@ -36,7 +36,7 @@ export function createBoardState(catalog) {
   const designTechnologies = Object.fromEntries(catalog.designs.map(item => [item.id, [...new Set(item.technologies ?? [])]]));
   const designSources = reverseLinks(sourceDesigns, levels[1]);
   const technologyDesigns = reverseLinks(designTechnologies, levels[2]);
-  const directTechnologies = Object.fromEntries(practices.map(item => [item.id, item.technologies ?? []]));
+  const directTechnologies = Object.fromEntries(origins.map(item => [item.id, [...new Set(item.technologies ?? [])]]));
   const sourceTechnologies = Object.fromEntries(origins.map(item => [item.id, [...new Set([
     ...collectForward(designTechnologies, sourceDesigns[item.id]), ...(directTechnologies[item.id] ?? []),
   ])]]));
