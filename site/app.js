@@ -649,7 +649,7 @@ function openDetail(level, id) {
   const metadata = [typeLabels[item.type] ?? item.type, statusLabel(item), ...archiveLabels(item), item.receivedAt ? `收录于 ${item.receivedAt}` : ''].filter(Boolean);
   detail.querySelector('.detail-meta').textContent = metadata.join(' · ');
   const summary = detail.querySelector('.detail-summary');
-  summary.hidden = !item.summary;
+  summary.hidden = level === 2 || !item.summary;
   summary.textContent = item.summary ?? '';
   const request = ++detailRequestVersion;
   const url = level === 0 ? sourceUrlFor(id) : null;
