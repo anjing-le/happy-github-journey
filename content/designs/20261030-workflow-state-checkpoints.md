@@ -15,8 +15,7 @@
     }
   ],
   "technologies": [
-    "tech-agent-harness",
-    "tech-mcp"
+    "tech-agent-harness"
   ]
 }
 ---

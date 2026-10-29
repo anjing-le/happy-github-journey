@@ -15,8 +15,7 @@
     }
   ],
   "technologies": [
-    "tech-embedding",
-    "tech-bitemporal-data"
+    "tech-embedding"
   ]
 }
 ---
