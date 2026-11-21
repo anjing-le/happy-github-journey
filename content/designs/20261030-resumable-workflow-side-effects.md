@@ -15,7 +15,6 @@
     }
   ],
   "technologies": [
-    "tech-langgraph",
     "tech-idempotency"
   ]
 }

@@ -44,7 +44,7 @@ summaryBubble.hidden = true;
 document.body.append(summaryBubble);
 
 const statusLabels = { pending: '待解析', draft: '待校准', reviewed: '已认可' };
-const typeLabels = { article: '文章', 'open-source': '开源项目' };
+const typeLabels = { article: '文章', 'open-source': '开源项目', 'source-available': '源码可见项目' };
 
 for (const type of new Set(['article', 'open-source', ...catalog.sources.map(item => item.type)])) {
   const option = document.createElement('option');
