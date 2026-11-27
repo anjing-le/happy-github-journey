@@ -227,16 +227,19 @@ def is_mirror_placeholder(ref: str) -> bool:
 
 
 def body_has_source(body, source_url: str) -> bool:
-    """Require the exact original URL in body text or a real body anchor.
+    """Require the original URL in body text or a real body anchor.
 
     An unrelated sidebar, script, image attribute, or a longer URL containing
     the share token cannot establish correspondence with the original article.
     """
     expected = source_url.rstrip("/")
+    # Verified publisher share parameter; do not accept arbitrary queries or
+    # substring matches as provenance for another article.
+    accepted = {expected, expected + "?nwr_flag=1"}
     for anchor in body.find_all("a", href=True):
-        if str(anchor["href"]).strip().rstrip("/") == expected:
+        if str(anchor["href"]).strip().rstrip("/") in accepted:
             return True
-    pattern = re.escape(expected) + r"/?(?=$|[\s<>\"'，。；：！？、（）【】《》\[\]()])"
+    pattern = r"(?<![A-Za-z0-9_/?&=:#%+.-])" + re.escape(expected) + r"/?(?:\?nwr_flag=1)?(?=$|[\s<>\"'，。；：！？、（）【】《》\[\]()])"
     return bool(re.search(pattern, body.get_text(" ", strip=True)))
 
 
